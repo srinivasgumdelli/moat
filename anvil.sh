@@ -5,10 +5,44 @@
 
 set -euo pipefail
 
-CONFIG_DIR="$HOME/.devcontainers/anvil"
-OVERRIDE_FILE="$CONFIG_DIR/docker-compose.extra-dirs.yml"
+# --- Self-locate: resolve symlinks to find the repo directory ---
+resolve_path() {
+  local path="$1"
+  while [ -L "$path" ]; do
+    local dir
+    dir="$(cd -P "$(dirname "$path")" && pwd)"
+    path="$(readlink "$path")"
+    # If readlink returned a relative path, resolve it
+    [[ "$path" != /* ]] && path="$dir/$path"
+  done
+  echo "$(cd -P "$(dirname "$path")" && pwd)/$(basename "$path")"
+}
+
+SCRIPT_PATH="$(resolve_path "${BASH_SOURCE[0]}")"
+REPO_DIR="$(dirname "$SCRIPT_PATH")"
+DATA_DIR="$HOME/.local/share/anvil-data"
+OVERRIDE_FILE="$REPO_DIR/docker-compose.extra-dirs.yml"
 PROXY_PIDFILE="/tmp/anvil-tool-proxy.pid"
 PROXY_LOG="/tmp/anvil-tool-proxy.log"
+
+# Ensure data directory exists
+mkdir -p "$DATA_DIR"
+
+# Auto-generate proxy token if missing (migration from old installs)
+if [ ! -f "$DATA_DIR/.proxy-token" ]; then
+  # Migrate from old location if it exists
+  if [ -f "$HOME/.devcontainers/anvil/.proxy-token" ] && [ ! -L "$HOME/.devcontainers/anvil" ]; then
+    cp "$HOME/.devcontainers/anvil/.proxy-token" "$DATA_DIR/.proxy-token"
+    echo "[anvil] Migrated proxy token to $DATA_DIR/.proxy-token"
+  else
+    openssl rand -hex 32 > "$DATA_DIR/.proxy-token"
+    chmod 600 "$DATA_DIR/.proxy-token"
+    echo "[anvil] Generated new proxy token at $DATA_DIR/.proxy-token"
+  fi
+fi
+
+# Copy token into repo dir for Docker build context
+cp "$DATA_DIR/.proxy-token" "$REPO_DIR/.proxy-token"
 
 # Handle subcommands
 if [ "${1:-}" = "update" ]; then
@@ -18,10 +52,14 @@ if [ "${1:-}" = "update" ]; then
     BUILD_ARGS+=(--build-arg "CLAUDE_CODE_VERSION=$2")
     echo "[anvil] Rebuilding with Claude Code v$2..."
   else
+    echo "[anvil] Pulling latest changes..."
+    git -C "$REPO_DIR" pull --ff-only
     echo "[anvil] Rebuilding image (no-cache)..."
   fi
+  # Copy token again after pull (in case .gitignore cleaned it)
+  cp "$DATA_DIR/.proxy-token" "$REPO_DIR/.proxy-token"
   docker compose --project-name anvil \
-    -f "$CONFIG_DIR/docker-compose.yml" \
+    -f "$REPO_DIR/docker-compose.yml" \
     -f "$OVERRIDE_FILE" build --no-cache "${BUILD_ARGS[@]}"
   echo "[anvil] Update complete."
   exit 0
@@ -90,7 +128,7 @@ cleanup() {
   fi
   lsof -ti :9876 2>/dev/null | xargs kill 2>/dev/null || true
   docker compose --project-name anvil \
-    -f "$CONFIG_DIR/docker-compose.yml" \
+    -f "$REPO_DIR/docker-compose.yml" \
     -f "$OVERRIDE_FILE" down 2>/dev/null || true
 }
 
@@ -102,7 +140,7 @@ cleanup
 
 # Start tool proxy
 echo "[anvil] Starting tool proxy..."
-node "$CONFIG_DIR/tool-proxy.mjs" --workspace "$WORKSPACE" \
+ANVIL_TOKEN_FILE="$DATA_DIR/.proxy-token" node "$REPO_DIR/tool-proxy.mjs" --workspace "$WORKSPACE" \
   </dev/null >"$PROXY_LOG" 2>&1 &
 PROXY_PID=$!
 echo "$PROXY_PID" > "$PROXY_PIDFILE"
@@ -119,11 +157,11 @@ echo "[anvil] Tool proxy running (PID $PROXY_PID)"
 echo "[anvil] Starting devcontainer..."
 devcontainer up \
   --workspace-folder "$WORKSPACE" \
-  --config "$CONFIG_DIR/devcontainer.json"
+  --config "$REPO_DIR/devcontainer.json"
 
 # Execute Claude Code (blocks until exit)
 echo "[anvil] Launching Claude Code..."
 devcontainer exec \
   --workspace-folder "$WORKSPACE" \
-  --config "$CONFIG_DIR/devcontainer.json" \
+  --config "$REPO_DIR/devcontainer.json" \
   claude --dangerously-skip-permissions ${CLAUDE_ADD_DIRS[@]+"${CLAUDE_ADD_DIRS[@]}"} ${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}
