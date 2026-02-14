@@ -1,15 +1,15 @@
 #!/bin/bash
-# Anvil — Lightweight installer (assumes prerequisites are installed)
-# Usage: curl -fsSL https://raw.githubusercontent.com/srinivasgumdelli/anvil/main/install.sh | bash
+# Moat — Lightweight installer (assumes prerequisites are installed)
+# Usage: curl -fsSL https://raw.githubusercontent.com/srinivasgumdelli/moat/main/install.sh | bash
 set -euo pipefail
 
-REPO_URL="https://github.com/srinivasgumdelli/anvil.git"
-INSTALL_DIR="$HOME/.local/share/anvil"
-SYMLINK_PATH="$HOME/.devcontainers/anvil"
-DATA_DIR="$HOME/.local/share/anvil-data"
+REPO_URL="https://github.com/srinivasgumdelli/moat.git"
+INSTALL_DIR="$HOME/.local/share/moat"
+SYMLINK_PATH="$HOME/.devcontainers/moat"
+DATA_DIR="$HOME/.local/share/moat-data"
 
 echo "=============================="
-echo "Anvil Installer"
+echo "Moat Installer"
 echo "=============================="
 echo ""
 
@@ -34,7 +34,7 @@ if [ ${#missing[@]} -gt 0 ]; then
   done
   echo ""
   echo "Or run the full setup instead:"
-  echo "  git clone $REPO_URL && cd anvil && ./setup.sh"
+  echo "  git clone $REPO_URL && cd moat && ./setup.sh"
   exit 1
 fi
 echo "PASS: git, docker, node found"
@@ -58,7 +58,7 @@ fi
 echo ""
 
 # --- 2. Clone or update repo ---
-echo "--- Installing Anvil ---"
+echo "--- Installing Moat ---"
 
 if [ -d "$INSTALL_DIR/.git" ]; then
   echo "Updating existing install..."
@@ -137,14 +137,14 @@ else
   SHELL_RC="$HOME/.profile"
 fi
 
-if grep -q "alias anvil=" "$SHELL_RC" 2>/dev/null; then
+if grep -q "alias moat=" "$SHELL_RC" 2>/dev/null; then
   echo "PASS: Shell aliases already in $SHELL_RC"
 else
   cat >> "$SHELL_RC" << 'ALIASES'
 
-# Anvil — sandboxed Claude Code
-alias anvil='~/.devcontainers/anvil/anvil.sh'
-alias anvil-plan='~/.devcontainers/anvil/anvil.sh --allowedTools "Read,Grep,Glob,Task,WebFetch,WebSearch"'
+# Moat — sandboxed Claude Code
+alias moat='~/.devcontainers/moat/moat.sh'
+alias moat-plan='~/.devcontainers/moat/moat.sh --allowedTools "Read,Grep,Glob,Task,WebFetch,WebSearch"'
 ALIASES
   echo "PASS: Aliases added to $SHELL_RC"
 fi
@@ -156,7 +156,7 @@ echo "--- Building Docker image ---"
 echo "This may take 5-10 minutes on first run (cached after that)..."
 echo ""
 
-docker compose --project-name anvil \
+docker compose --project-name moat \
   -f "$INSTALL_DIR/docker-compose.yml" \
   -f "$INSTALL_DIR/docker-compose.extra-dirs.yml" build
 
@@ -165,17 +165,17 @@ echo "PASS: Docker image built"
 
 echo ""
 echo "=============================="
-echo "Anvil installed!"
+echo "Moat installed!"
 echo "=============================="
 echo ""
 echo "Usage:"
-echo "  anvil                                    # Full access (default: cwd)"
-echo "  anvil ~/Projects/myapp                  # Target a specific repo"
-echo "  anvil . --add-dir ~/Projects/shared-lib # Mount extra directories"
-echo "  anvil-plan                              # Read-only tools only"
+echo "  moat                                     # Full access (default: cwd)"
+echo "  moat ~/Projects/myapp                   # Target a specific repo"
+echo "  moat . --add-dir ~/Projects/shared-lib  # Mount extra directories"
+echo "  moat-plan                               # Read-only tools only"
 echo ""
 echo "Update:"
-echo "  anvil update                            # Pull latest + rebuild"
+echo "  moat update                             # Pull latest + rebuild"
 echo ""
 echo "Restart your shell or run:"
 echo "  source $SHELL_RC"
