@@ -64,8 +64,8 @@ RUN chmod 644 /etc/tool-proxy-token && \
     chmod +x /usr/local/bin/git /usr/local/bin/gh \
              /usr/local/bin/terraform /usr/local/bin/kubectl /usr/local/bin/aws
 
-# Copy sandbox verification script
-COPY verify-sandbox.sh /usr/local/bin/
-RUN chmod +x /usr/local/bin/verify-sandbox.sh
+# Copy verification script
+COPY verify.sh /usr/local/bin/
+RUN chmod +x /usr/local/bin/verify.sh
 
 USER codespace

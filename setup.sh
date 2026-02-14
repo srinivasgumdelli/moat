@@ -82,7 +82,7 @@ mkdir -p "$HOME_CONFIG_DIR"
 
 # Copy all config files
 for f in devcontainer.json docker-compose.yml Dockerfile squid.conf \
-         tool-proxy.mjs anvil.sh verify-sandbox.sh \
+         tool-proxy.mjs anvil.sh verify.sh \
          git-proxy-wrapper.sh gh-proxy-wrapper.sh \
          terraform-proxy-wrapper.sh kubectl-proxy-wrapper.sh aws-proxy-wrapper.sh; do
   if [ -f "$REPO_DIR/$f" ]; then

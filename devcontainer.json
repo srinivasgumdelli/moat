@@ -22,6 +22,6 @@
   "remoteEnv": {
     "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}"
   },
-  "postStartCommand": "/usr/local/bin/verify-sandbox.sh",
+  "postStartCommand": "/usr/local/bin/verify.sh",
   "waitFor": "postStartCommand"
 }
