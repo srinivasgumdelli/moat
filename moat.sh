@@ -20,7 +20,7 @@ resolve_path() {
 
 SCRIPT_PATH="$(resolve_path "${BASH_SOURCE[0]}")"
 REPO_DIR="$(dirname "$SCRIPT_PATH")"
-DATA_DIR="$HOME/.local/share/moat-data"
+DATA_DIR="$HOME/.moat/data"
 OVERRIDE_FILE="$REPO_DIR/docker-compose.extra-dirs.yml"
 PROXY_PIDFILE="/tmp/moat-tool-proxy.pid"
 PROXY_LOG="/tmp/moat-tool-proxy.log"

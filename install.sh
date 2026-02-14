@@ -6,9 +6,9 @@
 set -euo pipefail
 
 REPO_URL="https://github.com/srinivasgumdelli/moat.git"
-INSTALL_DIR="$HOME/.local/share/moat"
+INSTALL_DIR="$HOME/.moat"
 SYMLINK_PATH="$HOME/.devcontainers/moat"
-DATA_DIR="$HOME/.local/share/moat-data"
+DATA_DIR="$HOME/.moat/data"
 
 # --- Detect context ---
 # If moat.sh exists next to this script, we're running from a cloned repo.

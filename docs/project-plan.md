@@ -203,7 +203,7 @@ moat update
    └── No file copying — repo is used directly
 
 3. Generate proxy token
-   ├── If ~/.local/share/moat-data/.proxy-token exists → skip
+   ├── If ~/.moat/data/.proxy-token exists → skip
    ├── Otherwise: openssl rand -hex 32, chmod 600
    └── Copy token into repo for Docker build context
 
@@ -224,10 +224,10 @@ Lightweight version — skips Homebrew/prerequisite installs:
 ```
 1. Check prerequisites (git, docker, node) — error with instructions if missing
 2. Install devcontainer CLI if missing
-3. Clone repo to ~/.local/share/moat (or git pull if exists)
+3. Clone repo to ~/.moat (or git pull if exists)
 4. Create symlink ~/.devcontainers/moat/ → repo
 5. Migrate old directory-based installs
-6. Generate proxy token in ~/.local/share/moat-data/
+6. Generate proxy token in ~/.moat/data/
 7. Add shell aliases
 8. Build Docker image
 ```
@@ -311,7 +311,7 @@ ANTHROPIC_API_KEY:
   Protected by: network isolation (can only reach anthropic.com through squid)
 
 Proxy token (.proxy-token):
-  Source of truth: ~/.local/share/moat-data/.proxy-token
+  Source of truth: ~/.moat/data/.proxy-token
   Copied into repo dir before Docker builds (in .gitignore)
   Baked into Docker image at /etc/tool-proxy-token
   tool-proxy.mjs reads via MOAT_TOKEN_FILE env var (fallback: __dirname/.proxy-token)

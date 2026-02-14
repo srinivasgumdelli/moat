@@ -53,7 +53,7 @@ Key properties:
 
 ## File Structure
 
-`~/.devcontainers/moat/` is a **symlink** pointing to the cloned repo (default: `~/.local/share/moat` for curl installs, or wherever you cloned for local installs). Runtime data lives separately in `~/.local/share/moat-data/`.
+`~/.devcontainers/moat/` is a **symlink** pointing to the cloned repo (default: `~/.moat` for curl installs, or wherever you cloned for local installs). Runtime data lives in `~/.moat/data/`.
 
 ```
 ~/.devcontainers/moat/ → <repo>        # Symlink to cloned repo
@@ -69,7 +69,7 @@ Key properties:
 ├── .proxy-token           # Copied from DATA_DIR before builds (in .gitignore)
 └── verify.sh              # Post-start verification script
 
-~/.local/share/moat-data/
+~/.moat/data/
 └── .proxy-token           # Persistent bearer token (source of truth)
 ```
 
@@ -167,7 +167,7 @@ Credentials (GitHub tokens, SSH keys) never enter the container. Instead, a host
 
 Zero dynamic configuration — everything is static/baked-in:
 
-1. A **static bearer token** is generated once (`openssl rand -hex 32`) and stored in `~/.local/share/moat-data/.proxy-token`. It is copied into the repo dir before Docker builds (the copy is in `.gitignore`), then baked into the Docker image at `/etc/tool-proxy-token`
+1. A **static bearer token** is generated once (`openssl rand -hex 32`) and stored in `~/.moat/data/.proxy-token`. It is copied into the repo dir before Docker builds (the copy is in `.gitignore`), then baked into the Docker image at `/etc/tool-proxy-token`
 2. The **proxy URL** (`http://host.docker.internal:9876`) is hardcoded in the wrapper scripts
 3. The launcher script starts `tool-proxy.mjs --workspace ~/Repos` on the host before the container, with `MOAT_TOKEN_FILE` pointing to the data dir token
 4. **Path translation happens on the proxy side**: wrappers send container paths as-is (e.g., `/workspace/projects`), the proxy translates to host paths (e.g., `~/Repos/projects`)
@@ -240,7 +240,7 @@ moat update
 ### What Happens on Launch
 
 1. `moat.sh` resolves symlinks to find `REPO_DIR` (the actual repo checkout)
-2. Ensures `~/.local/share/moat-data/` exists with a proxy token (auto-generates or migrates from old installs)
+2. Ensures `~/.moat/data/` exists with a proxy token (auto-generates or migrates from old installs)
 3. Copies the proxy token into the repo dir for Docker build context
 4. Any previous sandbox session is torn down (ephemeral) — proxy killed, containers removed
 5. Tool proxy starts on the host (`127.0.0.1:9876`), reads token via `MOAT_TOKEN_FILE` env var

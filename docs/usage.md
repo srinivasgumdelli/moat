@@ -164,12 +164,12 @@ Language servers (typescript-language-server, pyright, gopls) start lazily on fi
 ## File layout
 
 ```
-~/.local/bin/moat                    → <repo>/moat.sh (launcher)
-~/.devcontainers/moat/               → <repo> (symlink, used by devcontainer)
-~/.local/share/moat-data/.proxy-token  (persistent bearer token)
+~/.local/bin/moat                → <repo>/moat.sh (launcher)
+~/.devcontainers/moat/           → <repo> (symlink, used by devcontainer)
+~/.moat/data/.proxy-token          (persistent bearer token)
 ```
 
-The repo itself lives at `~/.local/share/moat` (curl install) or wherever you cloned it.
+The repo itself lives at `~/.moat` (curl install) or wherever you cloned it.
 
 ## Troubleshooting
 

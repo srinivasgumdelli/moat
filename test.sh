@@ -8,7 +8,7 @@ PROJECT_NAME="moat-test"
 PROXY_PORT=9877
 PROXY_PID=""
 WORKSPACE="$SCRIPT_DIR"
-DATA_DIR="$HOME/.local/share/moat-data"
+DATA_DIR="$HOME/.moat/data"
 OVERRIDE_FILE="$SCRIPT_DIR/docker-compose.extra-dirs.yml"
 TOKEN_FILE="$DATA_DIR/.proxy-token"
 
