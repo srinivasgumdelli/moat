@@ -21,7 +21,8 @@ if [ "${1:-}" = "update" ]; then
     echo "[anvil] Rebuilding image (no-cache)..."
   fi
   docker compose --project-name anvil \
-    -f "$CONFIG_DIR/docker-compose.yml" build --no-cache "${BUILD_ARGS[@]}"
+    -f "$CONFIG_DIR/docker-compose.yml" \
+    -f "$OVERRIDE_FILE" build --no-cache "${BUILD_ARGS[@]}"
   echo "[anvil] Update complete."
   exit 0
 fi
