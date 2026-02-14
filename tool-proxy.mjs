@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Anvil tool proxy — runs on the host, executes commands with host credentials
+// Moat tool proxy — runs on the host, executes commands with host credentials
 // Container wrapper scripts proxy gh/git/terraform/kubectl/aws through this server
 // Container wrapper scripts send container paths; proxy translates to host paths
 // IaC tools (terraform/kubectl/aws) are restricted to read-only operations via allowlists
@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.TOOL_PROXY_PORT || '9876');
-const TOKEN_PATH = process.env.ANVIL_TOKEN_FILE || join(__dirname, '.proxy-token');
+const TOKEN_PATH = process.env.MOAT_TOKEN_FILE || join(__dirname, '.proxy-token');
 const TOKEN = readFileSync(TOKEN_PATH, 'utf-8').trim();
 
 // Parse --workspace argument (host path that maps to /workspace in container)
@@ -47,13 +47,13 @@ function validateTerraform(args) {
   const subcmd = args[0];
   if (subcmd.startsWith('-')) return { allowed: true }; // flags like --version, --help
   if (!TERRAFORM_ALLOWED.has(subcmd)) {
-    return { allowed: false, reason: `terraform ${subcmd} is blocked by Anvil (plan-only mode)` };
+    return { allowed: false, reason: `terraform ${subcmd} is blocked by Moat (plan-only mode)` };
   }
   if (subcmd === 'state' && args[1] && !TERRAFORM_STATE_ALLOWED.has(args[1])) {
-    return { allowed: false, reason: `terraform state ${args[1]} is blocked by Anvil` };
+    return { allowed: false, reason: `terraform state ${args[1]} is blocked by Moat` };
   }
   if (subcmd === 'workspace' && args[1] && !TERRAFORM_WORKSPACE_ALLOWED.has(args[1])) {
-    return { allowed: false, reason: `terraform workspace ${args[1]} is blocked by Anvil` };
+    return { allowed: false, reason: `terraform workspace ${args[1]} is blocked by Moat` };
   }
   return { allowed: true };
 }
@@ -71,13 +71,13 @@ function validateKubectl(args) {
   const subcmd = args[0];
   if (subcmd.startsWith('-')) return { allowed: true };
   if (!KUBECTL_ALLOWED.has(subcmd)) {
-    return { allowed: false, reason: `kubectl ${subcmd} is blocked by Anvil (read-only mode)` };
+    return { allowed: false, reason: `kubectl ${subcmd} is blocked by Moat (read-only mode)` };
   }
   if (subcmd === 'config' && args[1] && !KUBECTL_CONFIG_ALLOWED.has(args[1])) {
-    return { allowed: false, reason: `kubectl config ${args[1]} is blocked by Anvil` };
+    return { allowed: false, reason: `kubectl config ${args[1]} is blocked by Moat` };
   }
   if (subcmd === 'auth' && args[1] && !KUBECTL_AUTH_ALLOWED.has(args[1])) {
-    return { allowed: false, reason: `kubectl auth ${args[1]} is blocked by Anvil` };
+    return { allowed: false, reason: `kubectl auth ${args[1]} is blocked by Moat` };
   }
   return { allowed: true };
 }
@@ -101,7 +101,7 @@ function validateAws(args) {
   // Block based on the verb prefix of the action
   const verb = action.split('-')[0];
   if (AWS_BLOCKED_VERBS.has(verb)) {
-    return { allowed: false, reason: `aws ${service} ${action} is blocked by Anvil (read-only mode)` };
+    return { allowed: false, reason: `aws ${service} ${action} is blocked by Moat (read-only mode)` };
   }
   return { allowed: true };
 }
