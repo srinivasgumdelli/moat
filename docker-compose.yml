@@ -26,12 +26,12 @@ services:
       dockerfile: Dockerfile
       args:
         TZ: ${TZ:-America/Los_Angeles}
-        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-latest}
+        CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-2.1.42}
         GIT_DELTA_VERSION: ${GIT_DELTA_VERSION:-0.18.2}
     networks:
       sandbox:
     volumes:
-      - ~/Repos:/workspace:cached
+      - ${ANVIL_WORKSPACE:-~/Repos}:/workspace:cached
       - anvil-bashhistory:/commandhistory
       - anvil-config:/home/node/.claude
     depends_on:
