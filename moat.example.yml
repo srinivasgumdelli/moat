@@ -1,0 +1,31 @@
+# .moat.yml — Per-project configuration for Moat
+# Place this file in your workspace root (the directory you pass to `moat`)
+#
+# All sections are optional. If no .moat.yml exists, Moat uses defaults.
+
+# Background services — Docker containers on the sandbox network
+# These run alongside the devcontainer and are accessible by service name.
+# Smart defaults (healthcheck, resource limits) are applied for known images:
+#   postgres, redis, mysql, mariadb, mongo
+services:
+  postgres:
+    image: postgres:15
+    env:
+      POSTGRES_PASSWORD: moat
+      POSTGRES_DB: dev
+  redis:
+    image: redis:7
+
+# Environment variables — injected into the devcontainer
+# Use these to configure your app to connect to the services above.
+env:
+  DATABASE_URL: postgres://postgres:moat@postgres:5432/dev
+  REDIS_URL: redis://redis:6379
+
+# Extra allowed domains — added to the squid proxy whitelist
+# Use leading dot to match domain + all subdomains (e.g., .crates.io matches crates.io and *.crates.io)
+# Base domains (github, npm, anthropic, pypi, golang, etc.) are always allowed.
+domains:
+  - .crates.io
+  - .docker.io
+  - .rubygems.org
