@@ -38,6 +38,7 @@ SCRIPT_PATH="$(resolve_path "${BASH_SOURCE[0]}")"
 REPO_DIR="$(dirname "$SCRIPT_PATH")"
 DATA_DIR="$HOME/.moat/data"
 OVERRIDE_FILE="$REPO_DIR/docker-compose.extra-dirs.yml"
+SERVICES_FILE="$REPO_DIR/docker-compose.services.yml"
 PROXY_PIDFILE="/tmp/moat-tool-proxy.pid"
 PROXY_LOG="/tmp/moat-tool-proxy.log"
 
@@ -177,6 +178,7 @@ if [ "${1:-}" = "down" ]; then
   log "Tearing down containers..."
   docker compose --project-name moat \
     -f "$REPO_DIR/docker-compose.yml" \
+    -f "$SERVICES_FILE" \
     -f "$OVERRIDE_FILE" down 2>/dev/null || true
   # Also stop tool proxy
   if [ -f "$PROXY_PIDFILE" ]; then
@@ -202,11 +204,17 @@ if [ "${1:-}" = "update" ]; then
   # Stop running containers before rebuild
   docker compose --project-name moat \
     -f "$REPO_DIR/docker-compose.yml" \
+    -f "$SERVICES_FILE" \
     -f "$OVERRIDE_FILE" down 2>/dev/null || true
   # Copy token again after pull (in case .gitignore cleaned it)
   ensure_token_in_repo
+  # Ensure services placeholder exists
+  if [ ! -f "$SERVICES_FILE" ]; then
+    printf 'services:\n  devcontainer: {}\n' > "$SERVICES_FILE"
+  fi
   docker compose --project-name moat \
     -f "$REPO_DIR/docker-compose.yml" \
+    -f "$SERVICES_FILE" \
     -f "$OVERRIDE_FILE" build --no-cache ${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"}
   log "Update complete."
   exit 0
@@ -267,6 +275,26 @@ else
   printf 'services:\n  devcontainer: {}\n' > "$OVERRIDE_FILE"
 fi
 
+# Generate per-project config (services, squid, env) from .moat.yml
+if command -v node &>/dev/null; then
+  PROJECT_META=$(node "$REPO_DIR/generate-project-config.mjs" \
+    --workspace "$WORKSPACE" \
+    --repo "$REPO_DIR" 2>/dev/null) || PROJECT_META='{}'
+  # Log services/domains if present (jq is available on the host)
+  if command -v jq &>/dev/null; then
+    SVC_NAMES=$(echo "$PROJECT_META" | jq -r 'select(.has_services) | .service_names | join(", ")' 2>/dev/null)
+    [ -n "$SVC_NAMES" ] && log "Project services: ${DIM}${SVC_NAMES}${RESET}"
+    EXTRA_DOMS=$(echo "$PROJECT_META" | jq -r 'select(.extra_domains | length > 0) | .extra_domains | join(", ")' 2>/dev/null)
+    [ -n "$EXTRA_DOMS" ] && log "Extra domains: ${DIM}${EXTRA_DOMS}${RESET}"
+  fi
+else
+  # No node available — ensure placeholder files exist
+  if [ ! -f "$SERVICES_FILE" ]; then
+    printf 'services:\n  devcontainer: {}\n' > "$SERVICES_FILE"
+  fi
+  cp "$REPO_DIR/squid.conf" "$REPO_DIR/squid-runtime.conf" 2>/dev/null || true
+fi
+
 # Build claude --add-dir flags for extra directories
 CLAUDE_ADD_DIRS=()
 if [ ${#EXTRA_DIRS[@]} -gt 0 ]; then
@@ -291,6 +319,7 @@ trap cleanup_proxy EXIT
 container_running() {
   docker compose --project-name moat \
     -f "$REPO_DIR/docker-compose.yml" \
+    -f "$SERVICES_FILE" \
     -f "$OVERRIDE_FILE" ps --status running --format '{{.Name}}' 2>/dev/null \
     | grep -q devcontainer
 }

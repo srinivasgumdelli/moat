@@ -1,6 +1,6 @@
 {
   "name": "Moat",
-  "dockerComposeFile": ["docker-compose.yml", "docker-compose.extra-dirs.yml"],
+  "dockerComposeFile": ["docker-compose.yml", "docker-compose.services.yml", "docker-compose.extra-dirs.yml"],
   "service": "devcontainer",
   "workspaceFolder": "/workspace",
   "customizations": {

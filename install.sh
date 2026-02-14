@@ -277,13 +277,17 @@ section "Docker image"
 echo -e "  ${DIM}This may take a few minutes on first run (cached after that)...${RESET}"
 echo ""
 
-# Ensure override file exists (moat.sh generates it at runtime, but we need it for build)
+# Ensure override files exist (moat.sh generates them at runtime, but we need them for build)
 if [ ! -f "$REPO_DIR/docker-compose.extra-dirs.yml" ]; then
   printf 'services:\n  devcontainer: {}\n' > "$REPO_DIR/docker-compose.extra-dirs.yml"
+fi
+if [ ! -f "$REPO_DIR/docker-compose.services.yml" ]; then
+  printf 'services:\n  devcontainer: {}\n' > "$REPO_DIR/docker-compose.services.yml"
 fi
 
 docker compose --project-name moat \
   -f "$REPO_DIR/docker-compose.yml" \
+  -f "$REPO_DIR/docker-compose.services.yml" \
   -f "$REPO_DIR/docker-compose.extra-dirs.yml" build
 
 echo ""
