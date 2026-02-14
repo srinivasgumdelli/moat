@@ -13,4 +13,5 @@ devcontainer.json
 squid.conf
 .gitignore
 .dockerignore
+test.sh
 .tool-proxy.env
