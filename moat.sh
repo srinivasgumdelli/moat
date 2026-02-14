@@ -5,6 +5,22 @@
 
 set -euo pipefail
 
+# --- Colors (disabled when not a terminal) ---
+if [ -t 1 ]; then
+  BOLD='\033[1m'
+  DIM='\033[2m'
+  RED='\033[0;31m'
+  GREEN='\033[0;32m'
+  YELLOW='\033[0;33m'
+  CYAN='\033[0;36m'
+  RESET='\033[0m'
+else
+  BOLD='' DIM='' RED='' GREEN='' YELLOW='' CYAN='' RESET=''
+fi
+
+log()  { echo -e "${CYAN}[moat]${RESET} $1"; }
+err()  { echo -e "${RED}[moat]${RESET} $1"; }
+
 # --- Self-locate: resolve symlinks to find the repo directory ---
 resolve_path() {
   local path="$1"
@@ -39,11 +55,11 @@ if [ ! -f "$DATA_DIR/.proxy-token" ]; then
   # Migrate from old location if it exists
   if [ -f "$HOME/.devcontainers/moat/.proxy-token" ] && [ ! -L "$HOME/.devcontainers/moat" ]; then
     cp "$HOME/.devcontainers/moat/.proxy-token" "$DATA_DIR/.proxy-token"
-    echo "[moat] Migrated proxy token to $DATA_DIR/.proxy-token"
+    log "Migrated proxy token to $DATA_DIR/.proxy-token"
   else
     openssl rand -hex 32 > "$DATA_DIR/.proxy-token"
     chmod 600 "$DATA_DIR/.proxy-token"
-    echo "[moat] Generated new proxy token at $DATA_DIR/.proxy-token"
+    log "Generated new proxy token at $DATA_DIR/.proxy-token"
   fi
 fi
 
@@ -54,18 +70,17 @@ ensure_token_in_repo() {
 
 # --- doctor subcommand ---
 if [ "${1:-}" = "doctor" ]; then
-  echo "=============================="
-  echo "Moat Doctor"
-  echo "=============================="
+  echo ""
+  echo -e "${BOLD}Moat Doctor${RESET}"
   echo ""
 
   FAILS=0
   WARNS=0
 
-  check_pass() { echo "  PASS: $1"; }
-  check_warn() { echo "  WARN: $1"; WARNS=$((WARNS + 1)); }
-  check_fail() { echo "  FAIL: $1"; FAILS=$((FAILS + 1)); }
-  check_info() { echo "  INFO: $1"; }
+  check_pass() { echo -e "  ${GREEN}✓${RESET} $1"; }
+  check_warn() { echo -e "  ${YELLOW}!${RESET} $1"; WARNS=$((WARNS + 1)); }
+  check_fail() { echo -e "  ${RED}✗${RESET} $1"; FAILS=$((FAILS + 1)); }
+  check_info() { echo -e "  ${DIM}· $1${RESET}"; }
 
   # Symlink exists and points to repo
   if [ -L "$HOME/.devcontainers/moat" ]; then
@@ -78,7 +93,7 @@ if [ "${1:-}" = "doctor" ]; then
   elif [ -d "$HOME/.devcontainers/moat" ]; then
     check_warn "~/.devcontainers/moat is a directory (expected symlink to $REPO_DIR)"
   else
-    check_fail "~/.devcontainers/moat not found (run setup.sh)"
+    check_fail "~/.devcontainers/moat not found (run install.sh)"
   fi
 
   # Token in data dir
@@ -146,20 +161,20 @@ if [ "${1:-}" = "doctor" ]; then
 
   echo ""
   if [ "$FAILS" -gt 0 ]; then
-    echo "Result: $FAILS FAIL(s), $WARNS WARN(s)"
+    echo -e "  ${RED}${BOLD}$FAILS fail(s)${RESET}, $WARNS warn(s)"
     exit 1
   elif [ "$WARNS" -gt 0 ]; then
-    echo "Result: all checks passed, $WARNS WARN(s)"
+    echo -e "  ${GREEN}${BOLD}All checks passed${RESET}, $WARNS warn(s)"
     exit 0
   else
-    echo "Result: all checks passed"
+    echo -e "  ${GREEN}${BOLD}All checks passed${RESET}"
     exit 0
   fi
 fi
 
 # Handle subcommands
 if [ "${1:-}" = "down" ]; then
-  echo "[moat] Tearing down containers..."
+  log "Tearing down containers..."
   docker compose --project-name moat \
     -f "$REPO_DIR/docker-compose.yml" \
     -f "$OVERRIDE_FILE" down 2>/dev/null || true
@@ -169,7 +184,7 @@ if [ "${1:-}" = "down" ]; then
     rm -f "$PROXY_PIDFILE"
   fi
   lsof -ti :9876 2>/dev/null | xargs kill 2>/dev/null || true
-  echo "[moat] Done."
+  log "Done."
   exit 0
 fi
 
@@ -178,11 +193,11 @@ if [ "${1:-}" = "update" ]; then
   BUILD_ARGS=()
   if [ "${1:-}" = "--version" ] && [ -n "${2:-}" ]; then
     BUILD_ARGS+=(--build-arg "CLAUDE_CODE_VERSION=$2")
-    echo "[moat] Rebuilding with Claude Code v$2..."
+    log "Rebuilding with Claude Code v$2..."
   else
-    echo "[moat] Pulling latest changes..."
+    log "Pulling latest changes..."
     git -C "$REPO_DIR" pull --ff-only
-    echo "[moat] Rebuilding image (no-cache)..."
+    log "Rebuilding image (no-cache)..."
   fi
   # Stop running containers before rebuild
   docker compose --project-name moat \
@@ -193,7 +208,7 @@ if [ "${1:-}" = "update" ]; then
   docker compose --project-name moat \
     -f "$REPO_DIR/docker-compose.yml" \
     -f "$OVERRIDE_FILE" build --no-cache ${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"}
-  echo "[moat] Update complete."
+  log "Update complete."
   exit 0
 fi
 
@@ -221,7 +236,7 @@ while [ $# -gt 0 ]; do
         EXTRA_DIRS+=("$(cd "$2" && pwd)")
         shift 2
       else
-        echo "[moat] ERROR: --add-dir requires a valid directory path"
+        err "ERROR: --add-dir requires a valid directory path"
         exit 1
       fi
       ;;
@@ -244,9 +259,9 @@ if [ ${#EXTRA_DIRS[@]} -gt 0 ]; then
       echo "      - ${dir}:/extra/$(basename "$dir"):cached"
     done
   } > "$OVERRIDE_FILE"
-  echo "[moat] Extra directories:"
+  log "Extra directories:"
   for dir in "${EXTRA_DIRS[@]}"; do
-    echo "[moat]   $dir -> /extra/$(basename "$dir")"
+    echo -e "  ${DIM}$dir -> /extra/$(basename "$dir")${RESET}"
   done
 else
   printf 'services:\n  devcontainer: {}\n' > "$OVERRIDE_FILE"
@@ -261,7 +276,7 @@ if [ ${#EXTRA_DIRS[@]} -gt 0 ]; then
 fi
 
 cleanup_proxy() {
-  echo "[moat] Stopping tool proxy..."
+  log "Stopping tool proxy..."
   if [ -f "$PROXY_PIDFILE" ]; then
     kill "$(cat "$PROXY_PIDFILE")" 2>/dev/null || true
     rm -f "$PROXY_PIDFILE"
@@ -282,11 +297,11 @@ container_running() {
 
 # Start or reuse tool proxy
 if curl -sf http://127.0.0.1:9876/health &>/dev/null; then
-  echo "[moat] Tool proxy already running"
+  log "Tool proxy already running"
 else
   # Kill any stale proxy first
   cleanup_proxy 2>/dev/null
-  echo "[moat] Starting tool proxy..."
+  log "Starting tool proxy..."
   MOAT_TOKEN_FILE="$DATA_DIR/.proxy-token" node "$REPO_DIR/tool-proxy.mjs" --workspace "$WORKSPACE" \
     </dev/null >"$PROXY_LOG" 2>&1 &
   PROXY_PID=$!
@@ -294,11 +309,11 @@ else
   sleep 1
 
   if ! kill -0 "$PROXY_PID" 2>/dev/null; then
-    echo "[moat] ERROR: Tool proxy failed to start:"
+    err "Tool proxy failed to start:"
     cat "$PROXY_LOG"
     exit 1
   fi
-  echo "[moat] Tool proxy running (PID $PROXY_PID)"
+  log "Tool proxy running ${DIM}(PID $PROXY_PID)${RESET}"
 fi
 
 # Ensure token is in repo for devcontainer build context
@@ -306,16 +321,16 @@ ensure_token_in_repo
 
 # Start or reuse container
 if container_running; then
-  echo "[moat] Reusing running container"
+  log "Reusing running container"
 else
-  echo "[moat] Starting devcontainer..."
+  log "Starting devcontainer..."
   devcontainer up \
     --workspace-folder "$WORKSPACE" \
     --config "$REPO_DIR/devcontainer.json"
 fi
 
 # Execute Claude Code (blocks until exit)
-echo "[moat] Launching Claude Code..."
+log "Launching Claude Code..."
 devcontainer exec \
   --workspace-folder "$WORKSPACE" \
   --config "$REPO_DIR/devcontainer.json" \

@@ -4,6 +4,24 @@
 # Usage: moat uninstall [--force]
 set -euo pipefail
 
+# --- Colors (disabled when not a terminal) ---
+if [ -t 1 ]; then
+  BOLD='\033[1m'
+  DIM='\033[2m'
+  RED='\033[0;31m'
+  GREEN='\033[0;32m'
+  YELLOW='\033[0;33m'
+  CYAN='\033[0;36m'
+  RESET='\033[0m'
+else
+  BOLD='' DIM='' RED='' GREEN='' YELLOW='' CYAN='' RESET=''
+fi
+
+done_msg()  { echo -e "  ${GREEN}✓${RESET} $1"; }
+skip_msg()  { echo -e "  ${DIM}· $1${RESET}"; }
+warn_msg()  { echo -e "  ${YELLOW}! $1${RESET}"; }
+section()   { echo -e "\n${BOLD}${CYAN}[$1]${RESET}"; }
+
 # --- Self-locate: resolve symlinks to find the repo directory ---
 resolve_path() {
   local path="$1"
@@ -27,7 +45,7 @@ fi
 # Prompt helper — returns 0 (yes) or 1 (no). --force always returns 0.
 confirm() {
   if $FORCE; then return 0; fi
-  printf "%s [y/N] " "$1"
+  printf "  ${CYAN}?${RESET} %s ${DIM}[y/N]${RESET} " "$1"
   read -r answer
   case "$answer" in
     [yY]|[yY][eE][sS]) return 0 ;;
@@ -35,13 +53,11 @@ confirm() {
   esac
 }
 
-echo "=============================="
-echo "Moat Uninstaller"
-echo "=============================="
 echo ""
+echo -e "${BOLD}Moat Uninstaller${RESET}"
 
 # --- 1. Stop running containers & tool proxy ---
-echo "--- Stop containers & tool proxy ---"
+section "Containers & tool proxy"
 
 # Build compose file args (extra-dirs may not exist)
 COMPOSE_FILES=(-f "$REPO_DIR/docker-compose.yml")
@@ -52,29 +68,27 @@ fi
 if [ -f "$REPO_DIR/docker-compose.yml" ] && \
    docker compose --project-name moat "${COMPOSE_FILES[@]}" \
     ps --status running --format '{{.Name}}' 2>/dev/null | grep -q .; then
-  echo "Running Moat containers detected."
+  warn_msg "Running containers detected"
   if confirm "Stop containers?"; then
     docker compose --project-name moat "${COMPOSE_FILES[@]}" down 2>/dev/null || true
-    echo "DONE: Containers stopped"
+    done_msg "Containers stopped"
   else
-    echo "SKIP: Containers left running"
+    skip_msg "Containers left running"
   fi
 else
-  echo "SKIP: No running containers"
+  skip_msg "No running containers"
 fi
 
 # Kill tool proxy
 if [ -f /tmp/moat-tool-proxy.pid ]; then
   kill "$(cat /tmp/moat-tool-proxy.pid)" 2>/dev/null || true
   rm -f /tmp/moat-tool-proxy.pid
-  echo "DONE: Tool proxy stopped (pidfile)"
+  done_msg "Tool proxy stopped"
 fi
 lsof -ti :9876 2>/dev/null | xargs kill 2>/dev/null || true
 
-echo ""
-
 # --- 2. Remove Docker volumes ---
-echo "--- Docker volumes ---"
+section "Docker volumes"
 
 existing_volumes=()
 for vol in moat_moat-bashhistory moat_moat-config; do
@@ -84,24 +98,22 @@ for vol in moat_moat-bashhistory moat_moat-config; do
 done
 
 if [ ${#existing_volumes[@]} -gt 0 ]; then
-  echo "Found volumes: ${existing_volumes[*]}"
-  echo "WARNING: This destroys session history and Claude config."
+  warn_msg "Found: ${existing_volumes[*]}"
+  echo -e "  ${RED}This destroys session history and Claude config.${RESET}"
   if confirm "Remove Docker volumes?"; then
     for vol in "${existing_volumes[@]}"; do
       docker volume rm "$vol" 2>/dev/null || true
     done
-    echo "DONE: Volumes removed"
+    done_msg "Volumes removed"
   else
-    echo "SKIP: Volumes kept"
+    skip_msg "Volumes kept"
   fi
 else
-  echo "SKIP: No Moat volumes found"
+  skip_msg "No Moat volumes found"
 fi
 
-echo ""
-
 # --- 3. Remove Docker images ---
-echo "--- Docker images ---"
+section "Docker images"
 
 existing_images=()
 for img in moat-devcontainer ubuntu/squid; do
@@ -111,23 +123,21 @@ for img in moat-devcontainer ubuntu/squid; do
 done
 
 if [ ${#existing_images[@]} -gt 0 ]; then
-  echo "Found images: ${existing_images[*]}"
+  warn_msg "Found: ${existing_images[*]}"
   if confirm "Remove Docker images?"; then
     for img in "${existing_images[@]}"; do
       docker rmi "$img" 2>/dev/null || true
     done
-    echo "DONE: Images removed"
+    done_msg "Images removed"
   else
-    echo "SKIP: Images kept"
+    skip_msg "Images kept"
   fi
 else
-  echo "SKIP: No Moat images found"
+  skip_msg "No Moat images found"
 fi
 
-echo ""
-
 # --- 4. Remove Docker networks ---
-echo "--- Docker networks ---"
+section "Docker networks"
 
 existing_networks=()
 for net in moat_sandbox moat_extnet; do
@@ -137,89 +147,86 @@ for net in moat_sandbox moat_extnet; do
 done
 
 if [ ${#existing_networks[@]} -gt 0 ]; then
-  echo "Found networks: ${existing_networks[*]}"
+  warn_msg "Found: ${existing_networks[*]}"
   if confirm "Remove Docker networks?"; then
     for net in "${existing_networks[@]}"; do
       docker network rm "$net" 2>/dev/null || true
     done
-    echo "DONE: Networks removed"
+    done_msg "Networks removed"
   else
-    echo "SKIP: Networks kept"
+    skip_msg "Networks kept"
   fi
 else
-  echo "SKIP: No Moat networks found"
+  skip_msg "No Moat networks found"
 fi
-
-echo ""
 
 # --- 5. Remove host data ---
-echo "--- Host data (~/.moat/) ---"
+section "Host data"
 
 if [ -d "$HOME/.moat" ]; then
-  echo "Found ~/.moat/"
+  warn_msg "Found ~/.moat/"
   if confirm "Remove ~/.moat/ (proxy token, data)?"; then
     rm -rf "$HOME/.moat"
-    echo "DONE: ~/.moat/ removed"
+    done_msg "~/.moat/ removed"
   else
-    echo "SKIP: ~/.moat/ kept"
+    skip_msg "~/.moat/ kept"
   fi
 else
-  echo "SKIP: ~/.moat/ not found"
+  skip_msg "~/.moat/ not found"
 fi
 
-echo ""
-
 # --- 6. Remove symlinks ---
-echo "--- Symlinks ---"
+section "Symlinks"
 
 if [ -L "$HOME/.devcontainers/moat" ]; then
   rm -f "$HOME/.devcontainers/moat"
-  echo "DONE: Removed ~/.devcontainers/moat"
+  done_msg "Removed ~/.devcontainers/moat"
 elif [ -d "$HOME/.devcontainers/moat" ]; then
-  if confirm "Remove ~/.devcontainers/moat/ (legacy directory install)?"; then
+  if confirm "Remove ~/.devcontainers/moat/ (legacy directory)?"; then
     rm -rf "$HOME/.devcontainers/moat"
-    echo "DONE: Removed ~/.devcontainers/moat/"
+    done_msg "Removed ~/.devcontainers/moat/"
   else
-    echo "SKIP: ~/.devcontainers/moat/ kept"
+    skip_msg "~/.devcontainers/moat/ kept"
   fi
 else
-  echo "SKIP: ~/.devcontainers/moat not found"
+  skip_msg "~/.devcontainers/moat not found"
 fi
 
 if [ -L "$HOME/.local/bin/moat" ]; then
   rm -f "$HOME/.local/bin/moat"
-  echo "DONE: Removed ~/.local/bin/moat"
+  done_msg "Removed ~/.local/bin/moat"
 else
-  echo "SKIP: ~/.local/bin/moat not found"
+  skip_msg "~/.local/bin/moat not found"
 fi
 
-echo ""
-
 # --- 7. Clean shell RC files ---
-echo "--- Shell RC files ---"
+section "Shell config"
 
 clean_rc() {
   local rc="$1"
   if [ ! -f "$rc" ]; then return; fi
+  local cleaned=false
 
-  # Check for any Moat-related lines
+  # Old-style aliases
   if grep -qE '(alias moat=|alias moat-plan=|# Moat —)' "$rc" 2>/dev/null; then
     sed -i.bak '/# Moat —/d; /alias moat=/d; /alias moat-plan=/d' "$rc"
     rm -f "${rc}.bak"
-    echo "DONE: Cleaned old aliases from $rc"
+    cleaned=true
   fi
 
-  # Check for PATH entry added by install.sh
+  # PATH entry added by install.sh
   if grep -q '# Moat — sandboxed Claude Code' "$rc" 2>/dev/null; then
     sed -i.bak '/# Moat — sandboxed Claude Code/d' "$rc"
     rm -f "${rc}.bak"
-    # Remove the PATH line only if it was the one we added (next line after our comment)
-    # The comment is already gone, so check for orphaned PATH line
     if grep -qx 'export PATH="$HOME/.local/bin:$PATH"' "$rc" 2>/dev/null; then
       sed -i.bak '\|^export PATH="\$HOME/\.local/bin:\$PATH"$|d' "$rc"
       rm -f "${rc}.bak"
     fi
-    echo "DONE: Cleaned PATH entry from $rc"
+    cleaned=true
+  fi
+
+  if $cleaned; then
+    done_msg "Cleaned $(basename "$rc")"
   fi
 }
 
@@ -227,10 +234,8 @@ for rc in "$HOME/.zshrc" "$HOME/.bashrc" "$HOME/.profile"; do
   clean_rc "$rc"
 done
 
-echo ""
-
 # --- 8. Remove temp files ---
-echo "--- Temp files ---"
+section "Temp files"
 
 removed_tmp=false
 for f in /tmp/moat-tool-proxy.pid /tmp/moat-tool-proxy.log; do
@@ -241,15 +246,13 @@ for f in /tmp/moat-tool-proxy.pid /tmp/moat-tool-proxy.log; do
 done
 
 if $removed_tmp; then
-  echo "DONE: Temp files removed"
+  done_msg "Temp files removed"
 else
-  echo "SKIP: No temp files found"
+  skip_msg "No temp files found"
 fi
 
-echo ""
-
 # --- 9. Clean repo-local generated files ---
-echo "--- Repo-local generated files ---"
+section "Generated files"
 
 removed_repo=false
 for f in "$REPO_DIR/.proxy-token" "$REPO_DIR/docker-compose.extra-dirs.yml"; do
@@ -260,19 +263,17 @@ for f in "$REPO_DIR/.proxy-token" "$REPO_DIR/docker-compose.extra-dirs.yml"; do
 done
 
 if $removed_repo; then
-  echo "DONE: Generated files removed from $REPO_DIR"
+  done_msg "Generated files removed"
 else
-  echo "SKIP: No generated files found"
+  skip_msg "No generated files found"
 fi
 
-echo ""
-
 # --- Done ---
-echo "=============================="
-echo "Moat uninstall complete."
-echo "=============================="
 echo ""
-echo "The repo directory itself was NOT removed:"
-echo "  $REPO_DIR"
+echo -e "${GREEN}${BOLD}Uninstall complete.${RESET}"
 echo ""
-echo "To fully remove it:  rm -rf $REPO_DIR"
+echo -e "  The repo was ${BOLD}not${RESET} removed:"
+echo -e "  ${DIM}$REPO_DIR${RESET}"
+echo ""
+echo -e "  To fully remove it:  ${BOLD}rm -rf $REPO_DIR${RESET}"
+echo ""
