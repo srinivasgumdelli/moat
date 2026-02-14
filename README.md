@@ -148,7 +148,6 @@ Then re-run `moat` (the container rebuilds automatically).
 moat/
 ├── moat.sh                    # Launcher (starts proxy, container, Claude)
 ├── install.sh                  # Unified installer (curl-pipeable, auto-detects context)
-├── setup.sh                    # Backward-compat redirect to install.sh
 ├── tool-proxy.mjs              # Host-side proxy server with allowlists
 ├── Dockerfile                  # Container image
 ├── docker-compose.yml          # squid + devcontainer services
