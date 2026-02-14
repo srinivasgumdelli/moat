@@ -10,6 +10,7 @@ PROXY_PID=""
 WORKSPACE="$SCRIPT_DIR"
 DATA_DIR="$HOME/.moat/data"
 OVERRIDE_FILE="$SCRIPT_DIR/docker-compose.extra-dirs.yml"
+SERVICES_FILE="$SCRIPT_DIR/docker-compose.services.yml"
 TOKEN_FILE="$DATA_DIR/.proxy-token"
 
 PASS_COUNT=0
@@ -28,6 +29,7 @@ cleanup() {
   lsof -ti :"$PROXY_PORT" 2>/dev/null | xargs kill 2>/dev/null || true
   docker compose --project-name "$PROJECT_NAME" \
     -f "$SCRIPT_DIR/docker-compose.yml" \
+    -f "$SERVICES_FILE" \
     -f "$OVERRIDE_FILE" down 2>/dev/null || true
   echo "  Containers removed"
 }
@@ -55,11 +57,13 @@ echo "--- Phase 2: Build ---"
 # Ensure token is in repo for build context
 cp "$TOKEN_FILE" "$SCRIPT_DIR/.proxy-token"
 
-# Ensure override file exists
+# Ensure override files exist
 printf 'services:\n  devcontainer: {}\n' > "$OVERRIDE_FILE"
+printf 'services:\n  devcontainer: {}\n' > "$SERVICES_FILE"
 
 if docker compose --project-name "$PROJECT_NAME" \
   -f "$SCRIPT_DIR/docker-compose.yml" \
+  -f "$SERVICES_FILE" \
   -f "$OVERRIDE_FILE" build; then
   pass "Docker image built"
 else
@@ -158,6 +162,7 @@ devcontainer up \
   --workspace-folder "$WORKSPACE" \
   --config "$SCRIPT_DIR/devcontainer.json" \
   --docker-compose-file "$SCRIPT_DIR/docker-compose.yml" \
+  --docker-compose-file "$SERVICES_FILE" \
   --docker-compose-file "$OVERRIDE_FILE" \
   --project-name "$PROJECT_NAME" >/dev/null 2>&1
 
@@ -171,6 +176,7 @@ VERIFY_OUTPUT=$(devcontainer exec \
   --workspace-folder "$WORKSPACE" \
   --config "$SCRIPT_DIR/devcontainer.json" \
   --docker-compose-file "$SCRIPT_DIR/docker-compose.yml" \
+  --docker-compose-file "$SERVICES_FILE" \
   --docker-compose-file "$OVERRIDE_FILE" \
   --project-name "$PROJECT_NAME" \
   bash /workspace/verify.sh 2>&1) || true
