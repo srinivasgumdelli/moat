@@ -1,10 +1,11 @@
 #!/bin/bash
-# Anvil — One-command setup
+# Anvil — One-command setup (with prerequisite installs)
 # Usage: ./setup.sh
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "$0")" && pwd)"
-HOME_CONFIG_DIR="$HOME/.devcontainers/anvil"
+SYMLINK_PATH="$HOME/.devcontainers/anvil"
+DATA_DIR="$HOME/.local/share/anvil-data"
 
 echo "=============================="
 echo "Anvil Setup"
@@ -92,38 +93,46 @@ brew_install aws awscli
 
 echo ""
 
-# --- 2. Install configuration ---
+# --- 2. Create symlink (replacing old copy-based install) ---
 echo "--- Installing configuration ---"
 
-if [ ! -d "$REPO_DIR" ]; then
-  echo "ERROR: Config not found at $REPO_DIR"
-  echo "Run this script from the repo root."
-  exit 1
+mkdir -p "$(dirname "$SYMLINK_PATH")"
+mkdir -p "$DATA_DIR"
+
+# Migrate old directory-based installs
+if [ -d "$SYMLINK_PATH" ] && [ ! -L "$SYMLINK_PATH" ]; then
+  echo "Migrating old install..."
+  # Preserve proxy token if it exists
+  if [ -f "$SYMLINK_PATH/.proxy-token" ]; then
+    cp "$SYMLINK_PATH/.proxy-token" "$DATA_DIR/.proxy-token"
+    chmod 600 "$DATA_DIR/.proxy-token"
+    echo "PASS: Proxy token migrated to $DATA_DIR/.proxy-token"
+  fi
+  rm -rf "$SYMLINK_PATH"
 fi
 
-mkdir -p "$HOME_CONFIG_DIR"
-
-# Copy all config files
-for f in devcontainer.json docker-compose.yml docker-compose.extra-dirs.yml \
-         Dockerfile squid.conf tool-proxy.mjs anvil.sh verify.sh \
-         git-proxy-wrapper.sh gh-proxy-wrapper.sh \
-         terraform-proxy-wrapper.sh kubectl-proxy-wrapper.sh aws-proxy-wrapper.sh \
-         auto-diagnostics.sh ide-tools.mjs ide-lsp.mjs; do
-  if [ -f "$REPO_DIR/$f" ]; then
-    cp "$REPO_DIR/$f" "$HOME_CONFIG_DIR/$f"
+# Create or update symlink
+if [ -L "$SYMLINK_PATH" ]; then
+  # Update existing symlink if it points elsewhere
+  current_target="$(readlink "$SYMLINK_PATH")"
+  if [ "$current_target" != "$REPO_DIR" ]; then
+    rm "$SYMLINK_PATH"
+    ln -s "$REPO_DIR" "$SYMLINK_PATH"
+    echo "PASS: Symlink updated: $SYMLINK_PATH -> $REPO_DIR"
+  else
+    echo "PASS: Symlink already correct: $SYMLINK_PATH -> $REPO_DIR"
   fi
-done
-
-# Make scripts executable
-chmod +x "$HOME_CONFIG_DIR"/*.sh "$HOME_CONFIG_DIR"/*.mjs 2>/dev/null || true
-echo "PASS: Config installed to $HOME_CONFIG_DIR"
+else
+  ln -s "$REPO_DIR" "$SYMLINK_PATH"
+  echo "PASS: Symlink created: $SYMLINK_PATH -> $REPO_DIR"
+fi
 
 echo ""
 
 # --- 3. Generate proxy token ---
 echo "--- Proxy token ---"
 
-TOKEN_FILE="$HOME_CONFIG_DIR/.proxy-token"
+TOKEN_FILE="$DATA_DIR/.proxy-token"
 if [ -f "$TOKEN_FILE" ]; then
   echo "PASS: Proxy token already exists"
 else
@@ -131,6 +140,9 @@ else
   chmod 600 "$TOKEN_FILE"
   echo "PASS: Proxy token generated at $TOKEN_FILE"
 fi
+
+# Copy token into repo for Docker build context
+cp "$TOKEN_FILE" "$REPO_DIR/.proxy-token"
 
 echo ""
 
@@ -178,8 +190,8 @@ echo "This may take 5-10 minutes on first run (cached after that)..."
 echo ""
 
 docker compose --project-name anvil \
-  -f "$HOME_CONFIG_DIR/docker-compose.yml" \
-  -f "$HOME_CONFIG_DIR/docker-compose.extra-dirs.yml" build
+  -f "$REPO_DIR/docker-compose.yml" \
+  -f "$REPO_DIR/docker-compose.extra-dirs.yml" build
 
 echo ""
 echo "PASS: Docker image built"
@@ -194,6 +206,9 @@ echo "  anvil                                    # Full access (default: cwd)"
 echo "  anvil ~/Projects/myapp                  # Target a specific repo"
 echo "  anvil . --add-dir ~/Projects/shared-lib # Mount extra directories"
 echo "  anvil-plan                              # Read-only tools only"
+echo ""
+echo "Update:"
+echo "  anvil update                            # Pull latest + rebuild"
 echo ""
 echo "You may need to restart your shell for aliases to take effect:"
 echo "  source $SHELL_RC"
