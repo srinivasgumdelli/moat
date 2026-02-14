@@ -46,13 +46,13 @@ function validateTerraform(args) {
   const subcmd = args[0];
   if (subcmd.startsWith('-')) return { allowed: true }; // flags like --version, --help
   if (!TERRAFORM_ALLOWED.has(subcmd)) {
-    return { allowed: false, reason: `terraform ${subcmd} is blocked in sandbox (plan-only mode)` };
+    return { allowed: false, reason: `terraform ${subcmd} is blocked by Anvil (plan-only mode)` };
   }
   if (subcmd === 'state' && args[1] && !TERRAFORM_STATE_ALLOWED.has(args[1])) {
-    return { allowed: false, reason: `terraform state ${args[1]} is blocked in sandbox` };
+    return { allowed: false, reason: `terraform state ${args[1]} is blocked by Anvil` };
   }
   if (subcmd === 'workspace' && args[1] && !TERRAFORM_WORKSPACE_ALLOWED.has(args[1])) {
-    return { allowed: false, reason: `terraform workspace ${args[1]} is blocked in sandbox` };
+    return { allowed: false, reason: `terraform workspace ${args[1]} is blocked by Anvil` };
   }
   return { allowed: true };
 }
@@ -70,13 +70,13 @@ function validateKubectl(args) {
   const subcmd = args[0];
   if (subcmd.startsWith('-')) return { allowed: true };
   if (!KUBECTL_ALLOWED.has(subcmd)) {
-    return { allowed: false, reason: `kubectl ${subcmd} is blocked in sandbox (read-only mode)` };
+    return { allowed: false, reason: `kubectl ${subcmd} is blocked by Anvil (read-only mode)` };
   }
   if (subcmd === 'config' && args[1] && !KUBECTL_CONFIG_ALLOWED.has(args[1])) {
-    return { allowed: false, reason: `kubectl config ${args[1]} is blocked in sandbox` };
+    return { allowed: false, reason: `kubectl config ${args[1]} is blocked by Anvil` };
   }
   if (subcmd === 'auth' && args[1] && !KUBECTL_AUTH_ALLOWED.has(args[1])) {
-    return { allowed: false, reason: `kubectl auth ${args[1]} is blocked in sandbox` };
+    return { allowed: false, reason: `kubectl auth ${args[1]} is blocked by Anvil` };
   }
   return { allowed: true };
 }
@@ -100,7 +100,7 @@ function validateAws(args) {
   // Block based on the verb prefix of the action
   const verb = action.split('-')[0];
   if (AWS_BLOCKED_VERBS.has(verb)) {
-    return { allowed: false, reason: `aws ${service} ${action} is blocked in sandbox (read-only mode)` };
+    return { allowed: false, reason: `aws ${service} ${action} is blocked by Anvil (read-only mode)` };
   }
   return { allowed: true };
 }

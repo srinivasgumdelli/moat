@@ -49,7 +49,7 @@ fi
 # Check if command was blocked by allowlist
 BLOCKED=$(echo "$RESPONSE" | jq -r '.blocked // empty')
 if [ "$BLOCKED" = "true" ]; then
-  REASON=$(echo "$RESPONSE" | jq -r '.reason // "Command blocked by sandbox policy"')
+  REASON=$(echo "$RESPONSE" | jq -r '.reason // "Command blocked by Anvil policy"')
   echo "[terraform-proxy] BLOCKED: $REASON" >&2
   exit 126
 fi

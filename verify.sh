@@ -19,14 +19,14 @@ echo "PASS: GitHub API accessible through proxy"
 
 # Verify blocked domain is denied by proxy
 if curl -s --proxy "$HTTPS_PROXY" --connect-timeout 5 -o /dev/null https://example.com 2>/dev/null; then
-    echo "ERROR: Sandbox verification failed - was able to reach https://example.com"
+    echo "ERROR: Anvil verification failed - was able to reach https://example.com"
     exit 1
 fi
 echo "PASS: Blocked domain (example.com) correctly denied"
 
 # Verify direct access (bypassing proxy) is blocked by network isolation
 if curl -s --noproxy '*' --connect-timeout 5 -o /dev/null https://example.com 2>/dev/null; then
-    echo "ERROR: Sandbox verification failed - direct access (bypassing proxy) succeeded"
+    echo "ERROR: Anvil verification failed - direct access (bypassing proxy) succeeded"
     exit 1
 fi
 echo "PASS: Direct external access blocked (network isolation working)"
