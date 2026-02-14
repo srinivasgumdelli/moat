@@ -53,7 +53,7 @@ Implementation: The proxy checks `args[0]` (subcommand) against the allowlist be
 
 ### Files to Create
 
-All in `~/.devcontainers/anvil/` (synced from repo root by `setup.sh`):
+All in the repo (symlinked from `~/.devcontainers/anvil/`):
 
 | File | Purpose |
 |------|---------|
@@ -171,47 +171,65 @@ AWS/GCP/Azure API domains are NOT added to squid — cloud API calls happen on t
 
 ## Phase 2: Setup Script
 
-### File: `setup.sh` (in repo root)
+### Install options
 
-One-command installation that gets a new user from zero to running:
-
+**Full setup** (installs prerequisites via Homebrew):
 ```bash
-./setup.sh
+git clone ... && cd anvil && ./setup.sh
 ```
 
-### What It Does
+**Curl installer** (assumes Docker, Node, git already installed):
+```bash
+curl -fsSL https://raw.githubusercontent.com/srinivasgumdelli/anvil/main/install.sh | bash
+```
+
+**Update** (one command):
+```bash
+anvil update
+```
+
+### What `setup.sh` Does
 
 ```
-1. Check prerequisites
-   ├── Docker Desktop installed and running
-   ├── Node.js available (for tool-proxy.mjs)
-   ├── devcontainer CLI (install if missing: npm install -g @devcontainers/cli)
-   └── gh CLI (warn if missing, not required)
+1. Check/install prerequisites
+   ├── Homebrew, Docker Desktop, Node.js (via brew)
+   ├── devcontainer CLI (npm install -g)
+   ├── gh CLI, terraform, kubectl, aws (via brew)
+   └── Warn if ANTHROPIC_API_KEY not set
 
-2. Install configuration
-   ├── Create ~/.devcontainers/anvil/
-   ├── Copy all config files from repo root
-   └── Make scripts executable
+2. Link configuration
+   ├── Migrate old directory-based installs (preserve .proxy-token)
+   ├── Create symlink: ~/.devcontainers/anvil/ → repo dir
+   └── No file copying — repo is used directly
 
 3. Generate proxy token
-   ├── If ~/.devcontainers/anvil/.proxy-token exists → skip
-   └── Otherwise: openssl rand -hex 32 > .proxy-token, chmod 600
+   ├── If ~/.local/share/anvil-data/.proxy-token exists → skip
+   ├── Otherwise: openssl rand -hex 32, chmod 600
+   └── Copy token into repo for Docker build context
 
 4. Configure shell
    ├── Detect shell (zsh/bash)
    ├── If aliases already exist → skip
    └── Append anvil aliases to shell rc
 
-5. Check ANTHROPIC_API_KEY
-   └── Warn if not set, with instructions
-
-6. Build Docker image
+5. Build Docker image
    ├── docker compose build (uses host network, full internet access)
    └── First build is slow (~10 min), subsequent builds use cache
+```
 
-7. Verify
-   ├── Start proxy, container, run verify-sandbox.sh
-   └── Tear down
+### What `install.sh` Does
+
+Lightweight version — skips Homebrew/prerequisite installs:
+
+```
+1. Check prerequisites (git, docker, node) — error with instructions if missing
+2. Install devcontainer CLI if missing
+3. Clone repo to ~/.local/share/anvil (or git pull if exists)
+4. Create symlink ~/.devcontainers/anvil/ → repo
+5. Migrate old directory-based installs
+6. Generate proxy token in ~/.local/share/anvil-data/
+7. Add shell aliases
+8. Build Docker image
 ```
 
 ### Prerequisites Table
@@ -293,7 +311,10 @@ ANTHROPIC_API_KEY:
   Protected by: network isolation (can only reach anthropic.com through squid)
 
 Proxy token (.proxy-token):
-  Static, baked into Docker image at /etc/tool-proxy-token
+  Source of truth: ~/.local/share/anvil-data/.proxy-token
+  Copied into repo dir before Docker builds (in .gitignore)
+  Baked into Docker image at /etc/tool-proxy-token
+  tool-proxy.mjs reads via ANVIL_TOKEN_FILE env var (fallback: __dirname/.proxy-token)
   Not a credential — it's an auth token for the local proxy
   Only useful from within the Docker network
 ```
@@ -419,8 +440,8 @@ Added to the Docker image (all three languages):
 | 3 | Update Dockerfile to install terraform, kubectl, aws-cli + copy wrappers | `Dockerfile` |
 | 4 | Update squid.conf with HashiCorp domains | `squid.conf` |
 | 5 | Update verify-sandbox.sh with IaC checks | `verify-sandbox.sh` |
-| 6 | Create setup.sh install script | `setup.sh` (repo root) |
-| 7 | Update documentation | `docs/setup.md` |
+| 6 | Create setup.sh + install.sh | `setup.sh`, `install.sh` (repo root) |
+| 7 | Update documentation | `docs/setup.md`, `docs/project-plan.md` |
 | 8 | Test end-to-end: terraform plan, kubectl get, aws sts | Manual testing |
 
 ## Verification
@@ -433,7 +454,9 @@ Added to the Docker image (all three languages):
 6. `kubectl delete pod X` → **BLOCKED**
 7. `aws sts get-caller-identity` → returns caller identity from host credentials
 8. `aws ec2 terminate-instances` → **BLOCKED**
-9. `./setup.sh` on a clean machine → installs everything, builds image, ready to run
+9. `./setup.sh` on a clean machine → installs everything, creates symlink, builds image, ready to run
+10. `curl ... | bash` on machine with prereqs → clones repo, creates symlink, builds image
+11. `anvil update` → pulls latest code, rebuilds image
 
 ## Gotchas
 

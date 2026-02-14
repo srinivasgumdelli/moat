@@ -32,13 +32,19 @@ Claude Code runs inside a Docker container with `--dangerously-skip-permissions`
 
 ## Quick start
 
+**Option A — curl installer** (if you already have Docker, Node, and git):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/srinivasgumdelli/anvil/main/install.sh | bash
+```
+
+**Option B — full setup** (installs prerequisites via Homebrew):
+
 ```bash
 git clone git@github.com:srinivasgumdelli/anvil.git
 cd anvil
 ./setup.sh
 ```
-
-The setup script checks prerequisites, installs config to `~/.devcontainers/anvil/`, generates a proxy token, adds shell aliases, and builds the Docker image.
 
 Then:
 
@@ -48,6 +54,12 @@ anvil ~/Projects/myapp                       # target a specific directory
 anvil --add-dir ~/Projects/shared-lib        # mount extra directories
 anvil ~/Projects/myapp --add-dir ~/lib-a --add-dir ~/lib-b
 anvil-plan                                   # read-only tools only (no Write, Edit, Bash)
+```
+
+**Update** (pulls latest code + rebuilds the Docker image):
+
+```bash
+anvil update
 ```
 
 Extra directories are mounted at `/extra/<dirname>` inside the container and automatically registered with Claude Code via `--add-dir`.
@@ -127,7 +139,8 @@ Then re-run `anvil` (the container rebuilds automatically).
 ```
 anvil/
 ├── anvil.sh                    # Launcher (starts proxy, container, Claude)
-├── setup.sh                    # One-command install
+├── setup.sh                    # Full setup (installs prerequisites + configures)
+├── install.sh                  # Lightweight curl-friendly installer
 ├── tool-proxy.mjs              # Host-side proxy server with allowlists
 ├── Dockerfile                  # Container image
 ├── docker-compose.yml          # squid + devcontainer services

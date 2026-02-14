@@ -53,10 +53,10 @@ Key properties:
 
 ## File Structure
 
-All configuration lives in `~/.devcontainers/anvil/` (source of truth in the repo root):
+`~/.devcontainers/anvil/` is a **symlink** pointing to the cloned repo (default: `~/.local/share/anvil` for curl installs, or wherever you cloned for `setup.sh` installs). Runtime data lives separately in `~/.local/share/anvil-data/`.
 
 ```
-~/.devcontainers/anvil/
+~/.devcontainers/anvil/ → <repo>        # Symlink to cloned repo
 ├── devcontainer.json      # DevContainer CLI configuration
 ├── docker-compose.yml     # Two-service setup (squid + devcontainer)
 ├── Dockerfile             # DevContainer image (node:22, Claude Code, git-delta)
@@ -64,9 +64,13 @@ All configuration lives in `~/.devcontainers/anvil/` (source of truth in the rep
 ├── tool-proxy.mjs         # Host-side Node.js server for gh/git credential isolation
 ├── git-proxy-wrapper.sh   # Container-side git wrapper (proxies /workspace ops to host)
 ├── gh-proxy-wrapper.sh    # Container-side gh wrapper (proxies all ops to host)
-├── anvil.sh      # Host-side launcher script (starts proxy, container, Claude)
-├── .proxy-token           # Static bearer token (NOT committed — in .gitignore)
+├── anvil.sh               # Host-side launcher script (starts proxy, container, Claude)
+├── install.sh             # Lightweight curl-friendly installer
+├── .proxy-token           # Copied from DATA_DIR before builds (in .gitignore)
 └── verify.sh              # Post-start verification script
+
+~/.local/share/anvil-data/
+└── .proxy-token           # Persistent bearer token (source of truth)
 ```
 
 ## How Each File Works
@@ -163,9 +167,9 @@ Credentials (GitHub tokens, SSH keys) never enter the container. Instead, a host
 
 Zero dynamic configuration — everything is static/baked-in:
 
-1. A **static bearer token** is generated once (`openssl rand -hex 32 > .proxy-token`) and baked into the Docker image at `/etc/tool-proxy-token`
+1. A **static bearer token** is generated once (`openssl rand -hex 32`) and stored in `~/.local/share/anvil-data/.proxy-token`. It is copied into the repo dir before Docker builds (the copy is in `.gitignore`), then baked into the Docker image at `/etc/tool-proxy-token`
 2. The **proxy URL** (`http://host.docker.internal:9876`) is hardcoded in the wrapper scripts
-3. The launcher script starts `tool-proxy.mjs --workspace ~/Repos` on the host before the container
+3. The launcher script starts `tool-proxy.mjs --workspace ~/Repos` on the host before the container, with `ANVIL_TOKEN_FILE` pointing to the data dir token
 4. **Path translation happens on the proxy side**: wrappers send container paths as-is (e.g., `/workspace/projects`), the proxy translates to host paths (e.g., `~/Repos/projects`)
 5. Inside the container, wrapper scripts at `/usr/local/bin/git` and `/usr/local/bin/gh` shadow the real binaries
 6. When Claude runs `git status` in `/workspace/projects`, the git wrapper:
@@ -213,7 +217,7 @@ Installed at `/usr/local/bin/gh`:
 
 ### Launcher Script
 
-The sandbox is launched via `~/.devcontainers/anvil/anvil.sh` (a bash script, not a zsh function — avoids zsh job control issues that killed the proxy process):
+The sandbox is launched via `~/.devcontainers/anvil/anvil.sh` (a bash script, not a zsh function — avoids zsh job control issues that killed the proxy process). The script resolves symlinks to find the repo directory, so it works whether invoked via the symlink or directly.
 
 ```bash
 # ~/.zshrc aliases
@@ -229,16 +233,26 @@ anvil
 
 # Plan mode — read-only tools only (no Write, Edit, Bash)
 anvil-plan
+
+# Update (pull latest code + rebuild image)
+anvil update
 ```
 
 ### What Happens on Launch
 
-1. Any previous sandbox session is torn down (ephemeral) — proxy killed, containers removed
-2. Tool proxy starts on the host (`127.0.0.1:9876`), reads static token from `.proxy-token`
-3. `devcontainer up` starts squid + devcontainer, waits for squid health check
-4. `verify-sandbox.sh` runs: validates proxy, network isolation, token file, and tool proxy connectivity
-5. Claude Code launches with `--dangerously-skip-permissions`
-6. On exit: `trap cleanup EXIT` kills proxy and tears down containers
+1. `anvil.sh` resolves symlinks to find `REPO_DIR` (the actual repo checkout)
+2. Ensures `~/.local/share/anvil-data/` exists with a proxy token (auto-generates or migrates from old installs)
+3. Copies the proxy token into the repo dir for Docker build context
+4. Any previous sandbox session is torn down (ephemeral) — proxy killed, containers removed
+5. Tool proxy starts on the host (`127.0.0.1:9876`), reads token via `ANVIL_TOKEN_FILE` env var
+6. `devcontainer up` starts squid + devcontainer, waits for squid health check
+7. `verify-sandbox.sh` runs: validates proxy, network isolation, token file, and tool proxy connectivity
+8. Claude Code launches with `--dangerously-skip-permissions`
+9. On exit: `trap cleanup EXIT` kills proxy and tears down containers
+
+### Update
+
+`anvil update` pulls the latest code via `git -C "$REPO_DIR" pull --ff-only`, then rebuilds the Docker image with `--no-cache`. To pin a specific Claude Code version: `anvil update --version 1.0.0`.
 
 ### Teardown
 
@@ -250,17 +264,13 @@ Just run `anvil` again — the cleanup runs first, and the devcontainer CLI dete
 
 ## Adding New Domains
 
-Edit `~/.devcontainers/anvil/squid.conf` and add:
+Edit `squid.conf` in the repo and add:
 
 ```
 acl allowed_domains dstdomain .example.com
 ```
 
-Then restart the squid container:
-
-```bash
-docker compose --project-name anvil -f ~/.devcontainers/anvil/docker-compose.yml restart squid
-```
+Then restart the squid container (or just re-run `anvil` — it rebuilds automatically).
 
 Note: Use a leading dot (`.example.com`) to match the domain and all subdomains. Squid 6 does not allow both `example.com` and `.example.com` in the same ACL — the dot form covers both.
 
