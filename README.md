@@ -72,6 +72,8 @@ moat update
 
 Extra directories are mounted at `/extra/<dirname>` inside the container and automatically registered with Claude Code via `--add-dir`.
 
+See [docs/usage.md](docs/usage.md) for the full usage guide.
+
 ## Prerequisites
 
 | Tool | Required | Install |
