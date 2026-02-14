@@ -41,8 +41,113 @@ if [ ! -f "$DATA_DIR/.proxy-token" ]; then
   fi
 fi
 
-# Copy token into repo dir for Docker build context
-cp "$DATA_DIR/.proxy-token" "$REPO_DIR/.proxy-token"
+# Helper: copy token into repo dir for Docker build context
+ensure_token_in_repo() {
+  cp "$DATA_DIR/.proxy-token" "$REPO_DIR/.proxy-token"
+}
+
+# --- doctor subcommand ---
+if [ "${1:-}" = "doctor" ]; then
+  echo "=============================="
+  echo "Moat Doctor"
+  echo "=============================="
+  echo ""
+
+  FAILS=0
+  WARNS=0
+
+  check_pass() { echo "  PASS: $1"; }
+  check_warn() { echo "  WARN: $1"; WARNS=$((WARNS + 1)); }
+  check_fail() { echo "  FAIL: $1"; FAILS=$((FAILS + 1)); }
+  check_info() { echo "  INFO: $1"; }
+
+  # Symlink exists and points to repo
+  if [ -L "$HOME/.devcontainers/moat" ]; then
+    target="$(readlink "$HOME/.devcontainers/moat")"
+    if [ "$target" = "$REPO_DIR" ]; then
+      check_pass "Symlink ~/.devcontainers/moat -> $REPO_DIR"
+    else
+      check_fail "Symlink ~/.devcontainers/moat points to $target (expected $REPO_DIR)"
+    fi
+  else
+    check_fail "Symlink ~/.devcontainers/moat does not exist"
+  fi
+
+  # Token in data dir
+  if [ -f "$DATA_DIR/.proxy-token" ]; then
+    check_pass "Token exists at $DATA_DIR/.proxy-token"
+  else
+    check_fail "Token missing at $DATA_DIR/.proxy-token"
+  fi
+
+  # Token synced to repo
+  if [ -f "$REPO_DIR/.proxy-token" ]; then
+    check_pass "Token synced to repo dir"
+  else
+    check_warn "Token not synced to repo dir (will be copied on next build/launch)"
+  fi
+
+  # docker command
+  if command -v docker &>/dev/null; then
+    check_pass "docker command found"
+  else
+    check_fail "docker command not found"
+  fi
+
+  # node command
+  if command -v node &>/dev/null; then
+    check_pass "node command found"
+  else
+    check_fail "node command not found"
+  fi
+
+  # devcontainer CLI
+  if command -v devcontainer &>/dev/null; then
+    check_pass "devcontainer CLI found"
+  else
+    check_fail "devcontainer CLI not found"
+  fi
+
+  # Docker daemon responding
+  if docker info &>/dev/null 2>&1; then
+    check_pass "Docker daemon responding"
+  else
+    check_fail "Docker daemon not responding"
+  fi
+
+  # Docker image built
+  if docker images --format '{{.Repository}}' 2>/dev/null | grep -q "moat"; then
+    check_pass "Docker image built"
+  else
+    check_warn "Docker image not found (run 'moat update' to build)"
+  fi
+
+  # Tool proxy on :9876 (informational — only during sessions)
+  if curl -sf http://127.0.0.1:9876/health &>/dev/null; then
+    check_info "Tool proxy responding on :9876"
+  else
+    check_info "Tool proxy not running on :9876 (normal outside sessions)"
+  fi
+
+  # ANTHROPIC_API_KEY
+  if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+    check_pass "ANTHROPIC_API_KEY is set"
+  else
+    check_fail "ANTHROPIC_API_KEY not set"
+  fi
+
+  echo ""
+  if [ "$FAILS" -gt 0 ]; then
+    echo "Result: $FAILS FAIL(s), $WARNS WARN(s)"
+    exit 1
+  elif [ "$WARNS" -gt 0 ]; then
+    echo "Result: all checks passed, $WARNS WARN(s)"
+    exit 0
+  else
+    echo "Result: all checks passed"
+    exit 0
+  fi
+fi
 
 # Handle subcommands
 if [ "${1:-}" = "update" ]; then
@@ -57,7 +162,7 @@ if [ "${1:-}" = "update" ]; then
     echo "[moat] Rebuilding image (no-cache)..."
   fi
   # Copy token again after pull (in case .gitignore cleaned it)
-  cp "$DATA_DIR/.proxy-token" "$REPO_DIR/.proxy-token"
+  ensure_token_in_repo
   docker compose --project-name moat \
     -f "$REPO_DIR/docker-compose.yml" \
     -f "$OVERRIDE_FILE" build --no-cache "${BUILD_ARGS[@]}"
@@ -152,6 +257,9 @@ if ! kill -0 "$PROXY_PID" 2>/dev/null; then
   exit 1
 fi
 echo "[moat] Tool proxy running (PID $PROXY_PID)"
+
+# Ensure token is in repo for devcontainer build context
+ensure_token_in_repo
 
 # Start devcontainer
 echo "[moat] Starting devcontainer..."
