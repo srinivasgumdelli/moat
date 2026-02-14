@@ -1,7 +1,7 @@
 #!/bin/bash
 # Moat — sandboxed Claude Code launcher
 # Usage: moat.sh [workspace_path] [--add-dir <path>...] [claude args...]
-# Plan mode: moat.sh plan [workspace_path] [claude args...]
+# Subcommands: doctor | update [--version X.Y.Z] | down | plan
 
 set -euo pipefail
 
@@ -152,6 +152,21 @@ if [ "${1:-}" = "doctor" ]; then
 fi
 
 # Handle subcommands
+if [ "${1:-}" = "down" ]; then
+  echo "[moat] Tearing down containers..."
+  docker compose --project-name moat \
+    -f "$REPO_DIR/docker-compose.yml" \
+    -f "$OVERRIDE_FILE" down 2>/dev/null || true
+  # Also stop tool proxy
+  if [ -f "$PROXY_PIDFILE" ]; then
+    kill "$(cat "$PROXY_PIDFILE")" 2>/dev/null || true
+    rm -f "$PROXY_PIDFILE"
+  fi
+  lsof -ti :9876 2>/dev/null | xargs kill 2>/dev/null || true
+  echo "[moat] Done."
+  exit 0
+fi
+
 if [ "${1:-}" = "update" ]; then
   shift
   BUILD_ARGS=()
@@ -163,6 +178,10 @@ if [ "${1:-}" = "update" ]; then
     git -C "$REPO_DIR" pull --ff-only
     echo "[moat] Rebuilding image (no-cache)..."
   fi
+  # Stop running containers before rebuild
+  docker compose --project-name moat \
+    -f "$REPO_DIR/docker-compose.yml" \
+    -f "$OVERRIDE_FILE" down 2>/dev/null || true
   # Copy token again after pull (in case .gitignore cleaned it)
   ensure_token_in_repo
   docker compose --project-name moat \
@@ -235,47 +254,59 @@ if [ ${#EXTRA_DIRS[@]} -gt 0 ]; then
   done
 fi
 
-cleanup() {
-  echo "[moat] Cleaning up..."
+cleanup_proxy() {
+  echo "[moat] Stopping tool proxy..."
   if [ -f "$PROXY_PIDFILE" ]; then
     kill "$(cat "$PROXY_PIDFILE")" 2>/dev/null || true
     rm -f "$PROXY_PIDFILE"
   fi
   lsof -ti :9876 2>/dev/null | xargs kill 2>/dev/null || true
-  docker compose --project-name moat \
-    -f "$REPO_DIR/docker-compose.yml" \
-    -f "$OVERRIDE_FILE" down 2>/dev/null || true
 }
 
-# Cleanup on exit (ephemeral)
-trap cleanup EXIT
+# On exit: stop tool proxy, leave containers running for reuse
+trap cleanup_proxy EXIT
 
-# Teardown any previous session
-cleanup
+# Check if containers are already running with the same workspace
+container_running() {
+  docker compose --project-name moat \
+    -f "$REPO_DIR/docker-compose.yml" \
+    -f "$OVERRIDE_FILE" ps --status running --format '{{.Name}}' 2>/dev/null \
+    | grep -q devcontainer
+}
 
-# Start tool proxy
-echo "[moat] Starting tool proxy..."
-MOAT_TOKEN_FILE="$DATA_DIR/.proxy-token" node "$REPO_DIR/tool-proxy.mjs" --workspace "$WORKSPACE" \
-  </dev/null >"$PROXY_LOG" 2>&1 &
-PROXY_PID=$!
-echo "$PROXY_PID" > "$PROXY_PIDFILE"
-sleep 1
+# Start or reuse tool proxy
+if curl -sf http://127.0.0.1:9876/health &>/dev/null; then
+  echo "[moat] Tool proxy already running"
+else
+  # Kill any stale proxy first
+  cleanup_proxy 2>/dev/null
+  echo "[moat] Starting tool proxy..."
+  MOAT_TOKEN_FILE="$DATA_DIR/.proxy-token" node "$REPO_DIR/tool-proxy.mjs" --workspace "$WORKSPACE" \
+    </dev/null >"$PROXY_LOG" 2>&1 &
+  PROXY_PID=$!
+  echo "$PROXY_PID" > "$PROXY_PIDFILE"
+  sleep 1
 
-if ! kill -0 "$PROXY_PID" 2>/dev/null; then
-  echo "[moat] ERROR: Tool proxy failed to start:"
-  cat "$PROXY_LOG"
-  exit 1
+  if ! kill -0 "$PROXY_PID" 2>/dev/null; then
+    echo "[moat] ERROR: Tool proxy failed to start:"
+    cat "$PROXY_LOG"
+    exit 1
+  fi
+  echo "[moat] Tool proxy running (PID $PROXY_PID)"
 fi
-echo "[moat] Tool proxy running (PID $PROXY_PID)"
 
 # Ensure token is in repo for devcontainer build context
 ensure_token_in_repo
 
-# Start devcontainer
-echo "[moat] Starting devcontainer..."
-devcontainer up \
-  --workspace-folder "$WORKSPACE" \
-  --config "$REPO_DIR/devcontainer.json"
+# Start or reuse container
+if container_running; then
+  echo "[moat] Reusing running container"
+else
+  echo "[moat] Starting devcontainer..."
+  devcontainer up \
+    --workspace-folder "$WORKSPACE" \
+    --config "$REPO_DIR/devcontainer.json"
+fi
 
 # Execute Claude Code (blocks until exit)
 echo "[moat] Launching Claude Code..."

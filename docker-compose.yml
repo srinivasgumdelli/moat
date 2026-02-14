@@ -15,10 +15,10 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "squid -k check || exit 1"]
-      interval: 10s
-      timeout: 5s
+      interval: 2s
+      timeout: 2s
       retries: 3
-      start_period: 10s
+      start_period: 3s
 
   devcontainer:
     build:
