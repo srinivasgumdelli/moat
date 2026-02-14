@@ -1,0 +1,54 @@
+#!/bin/bash
+# git-proxy-wrapper.sh — routes /workspace git ops through host tool proxy
+# For paths outside /workspace, uses real git directly
+
+PROXY_URL="http://host.docker.internal:9876"
+PROXY_TOKEN=$(cat /etc/tool-proxy-token 2>/dev/null)
+REAL_GIT="/usr/bin/git"
+CWD="$(pwd)"
+
+should_use_proxy() {
+  [ -n "$PROXY_TOKEN" ] || return 1
+  case "$CWD" in
+    /workspace|/workspace/*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+if ! should_use_proxy; then
+  exec "$REAL_GIT" "$@"
+fi
+
+# Serialize arguments to JSON
+if [ $# -eq 0 ]; then
+  ARGS_JSON='[]'
+else
+  ARGS_JSON=$(printf '%s\0' "$@" | jq -Rs '[split("\u0000")[] | select(length > 0)]')
+fi
+JSON_PAYLOAD=$(jq -n --argjson args "$ARGS_JSON" --arg cwd "$CWD" \
+  '{args: $args, cwd: $cwd}')
+
+RESPONSE=$(curl -s -X POST "${PROXY_URL}/git" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer ${PROXY_TOKEN}" \
+  -d "$JSON_PAYLOAD" 2>/dev/null)
+
+CURL_EXIT=$?
+if [ $CURL_EXIT -ne 0 ]; then
+  echo "[git-proxy] ERROR: Tool proxy unreachable (is it running on the host?)" >&2
+  exit 128
+fi
+
+# Verify response is JSON before parsing
+if ! echo "$RESPONSE" | jq -e '.exitCode' >/dev/null 2>&1; then
+  echo "[git-proxy] ERROR: Tool proxy unreachable or returned invalid response" >&2
+  exit 128
+fi
+
+STDOUT=$(echo "$RESPONSE" | jq -r '.stdout // empty')
+STDERR=$(echo "$RESPONSE" | jq -r '.stderr // empty')
+EXIT_CODE=$(echo "$RESPONSE" | jq -r '.exitCode // 1')
+
+[ -n "$STDOUT" ] && printf '%s' "$STDOUT"
+[ -n "$STDERR" ] && printf '%s' "$STDERR" >&2
+exit "$EXIT_CODE"
