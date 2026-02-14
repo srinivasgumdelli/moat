@@ -67,6 +67,13 @@ RUN ARCH=$(uname -m) && \
     unzip -q awscliv2.zip && ./aws/install --bin-dir /usr/local/bin/aws-real && \
     rm -rf awscliv2.zip aws/
 
+# Beads task tracker (bd CLI)
+ARG BEADS_VERSION=0.49.6
+RUN ARCH=$(dpkg --print-architecture) && \
+    curl -sL "https://github.com/steveyegge/beads/releases/download/v${BEADS_VERSION}/beads_${BEADS_VERSION}_linux_${ARCH}.tar.gz" -o beads.tar.gz && \
+    tar xzf beads.tar.gz bd && mv bd /usr/local/bin/bd && \
+    rm beads.tar.gz
+
 # Install Claude Code as non-root
 RUN mkdir -p /usr/local/share/npm-global && \
     chown -R node:node /usr/local/share/npm-global
@@ -79,6 +86,15 @@ RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 # Force git to use HTTPS instead of SSH (SSH can't traverse HTTP proxy)
 RUN git config --global url."https://github.com/".insteadOf "git@github.com:" && \
     git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+
+# Configure Beads hooks and commands for Claude Code
+RUN bd setup claude && \
+    mkdir -p /home/node/.claude/commands && \
+    curl -sL "https://raw.githubusercontent.com/steveyegge/beads/main/integrations/claude-code/commands/plan-to-beads.md" \
+      -o /home/node/.claude/commands/plan-to-beads.md && \
+    jq '.permissions.allow = ((.permissions.allow // []) + ["Bash(bd:*)"])' \
+      /home/node/.claude/settings.json > /tmp/settings.json && \
+    mv /tmp/settings.json /home/node/.claude/settings.json
 
 # Install tool proxy wrapper scripts and static token
 USER root
