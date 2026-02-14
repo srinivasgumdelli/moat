@@ -56,6 +56,12 @@ moat ~/Projects/myapp --add-dir ~/lib-a --add-dir ~/lib-b
 moat-plan                                   # read-only tools only (no Write, Edit, Bash)
 ```
 
+**Diagnose** setup issues:
+
+```bash
+moat doctor
+```
+
 **Update** (pulls latest code + rebuilds the Docker image):
 
 ```bash
@@ -147,6 +153,7 @@ moat/
 ├── docker-compose.extra-dirs.yml # Extra directory mounts (auto-generated)
 ├── devcontainer.json           # devcontainer CLI config
 ├── squid.conf                  # Domain whitelist
+├── test.sh                     # End-to-end test suite
 ├── verify.sh                   # Post-start verification
 ├── git-proxy-wrapper.sh        # Container-side git wrapper
 ├── gh-proxy-wrapper.sh         # Container-side gh wrapper
