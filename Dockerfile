@@ -83,7 +83,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Go runtime + tools
 ARG GO_VERSION=1.23.6
 RUN ARCH=$(dpkg --print-architecture) && \
-    curl -sL "https://go.dev/dl/go${GO_VERSION}.linux_${ARCH}.tar.gz" | tar -C /usr/local -xz
+    curl -sL -o /tmp/go.tar.gz "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" && \
+    tar -C /usr/local -xzf /tmp/go.tar.gz && \
+    rm /tmp/go.tar.gz
 ENV PATH=$PATH:/usr/local/go/bin:/home/node/go/bin
 
 # Install Claude Code as non-root
@@ -110,29 +112,7 @@ RUN bd setup claude && \
     mkdir -p /home/node/.claude/commands /home/node/.claude/hooks /home/node/.claude/mcp && \
     curl -sL "https://raw.githubusercontent.com/steveyegge/beads/main/integrations/claude-code/commands/plan-to-beads.md" \
       -o /home/node/.claude/commands/plan-to-beads.md && \
-    jq '. + {
-      "permissions": {"allow": ((.permissions.allow // []) + ["Bash(bd:*)"])},
-      "hooks": {
-        "PostToolUse": [{
-          "matcher": "Edit|Write",
-          "hooks": [{
-            "type": "command",
-            "command": "/home/node/.claude/hooks/auto-diagnostics.sh",
-            "timeout": 30
-          }]
-        }]
-      },
-      "mcpServers": {
-        "ide-tools": {
-          "command": "node",
-          "args": ["/home/node/.claude/mcp/ide-tools.mjs"]
-        },
-        "ide-lsp": {
-          "command": "node",
-          "args": ["/home/node/.claude/mcp/ide-lsp.mjs"]
-        }
-      }
-    }' /home/node/.claude/settings.json > /tmp/settings.json && \
+    jq '. + {"permissions": {"allow": ((.permissions.allow // []) + ["Bash(bd:*)"])}, "hooks": {"PostToolUse": [{"matcher": "Edit|Write", "hooks": [{"type": "command", "command": "/home/node/.claude/hooks/auto-diagnostics.sh", "timeout": 30}]}]}, "mcpServers": {"ide-tools": {"command": "node", "args": ["/home/node/.claude/mcp/ide-tools.mjs"]}, "ide-lsp": {"command": "node", "args": ["/home/node/.claude/mcp/ide-lsp.mjs"]}}}' /home/node/.claude/settings.json > /tmp/settings.json && \
     mv /tmp/settings.json /home/node/.claude/settings.json
 
 # Install tool proxy wrapper scripts and static token
