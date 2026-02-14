@@ -3,7 +3,7 @@
 ## Validate install/update flow
 
 - [ ] Fresh `install.sh` on machine with Docker+Node → clones repo, creates symlink, builds image, launches
-- [ ] Fresh `./setup.sh` from repo clone → same result (with prereq installs)
+- [ ] Fresh `./install.sh` from repo clone → same result (with prereq installs)
 - [ ] `moat update` → pulls latest, rebuilds image
 - [ ] `moat` → tool proxy finds token via `MOAT_TOKEN_FILE`, Docker build has token, session works
 - [ ] Old user with `~/.devcontainers/moat/` directory → migrated to symlink, token preserved in `~/.moat/data/`
