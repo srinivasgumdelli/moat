@@ -170,7 +170,7 @@ if [ "${1:-}" = "update" ]; then
   ensure_token_in_repo
   docker compose --project-name moat \
     -f "$REPO_DIR/docker-compose.yml" \
-    -f "$OVERRIDE_FILE" build --no-cache "${BUILD_ARGS[@]}"
+    -f "$OVERRIDE_FILE" build --no-cache ${BUILD_ARGS[@]+"${BUILD_ARGS[@]}"}
   echo "[moat] Update complete."
   exit 0
 fi
