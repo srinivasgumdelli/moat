@@ -104,8 +104,8 @@ fi
 mkdir -p "$HOME_CONFIG_DIR"
 
 # Copy all config files
-for f in devcontainer.json docker-compose.yml Dockerfile squid.conf \
-         tool-proxy.mjs anvil.sh verify.sh \
+for f in devcontainer.json docker-compose.yml docker-compose.extra-dirs.yml \
+         Dockerfile squid.conf tool-proxy.mjs anvil.sh verify.sh \
          git-proxy-wrapper.sh gh-proxy-wrapper.sh \
          terraform-proxy-wrapper.sh kubectl-proxy-wrapper.sh aws-proxy-wrapper.sh; do
   if [ -f "$REPO_DIR/$f" ]; then
@@ -177,7 +177,8 @@ echo "This may take 5-10 minutes on first run (cached after that)..."
 echo ""
 
 docker compose --project-name anvil \
-  -f "$HOME_CONFIG_DIR/docker-compose.yml" build
+  -f "$HOME_CONFIG_DIR/docker-compose.yml" \
+  -f "$HOME_CONFIG_DIR/docker-compose.extra-dirs.yml" build
 
 echo ""
 echo "PASS: Docker image built"
@@ -188,9 +189,10 @@ echo "Setup complete!"
 echo "=============================="
 echo ""
 echo "Usage:"
-echo "  anvil                    # Full access (default: ~/Repos)"
-echo "  anvil ~/Projects/myapp   # Target a specific repo"
-echo "  anvil-plan               # Read-only tools only"
+echo "  anvil                                    # Full access (default: cwd)"
+echo "  anvil ~/Projects/myapp                  # Target a specific repo"
+echo "  anvil . --add-dir ~/Projects/shared-lib # Mount extra directories"
+echo "  anvil-plan                              # Read-only tools only"
 echo ""
 echo "You may need to restart your shell for aliases to take effect:"
 echo "  source $SHELL_RC"

@@ -1,6 +1,6 @@
 {
   "name": "Anvil",
-  "dockerComposeFile": "docker-compose.yml",
+  "dockerComposeFile": ["docker-compose.yml", "docker-compose.extra-dirs.yml"],
   "service": "devcontainer",
   "workspaceFolder": "/workspace",
   "customizations": {

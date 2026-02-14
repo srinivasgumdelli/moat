@@ -1,11 +1,12 @@
 #!/bin/bash
 # Anvil — sandboxed Claude Code launcher
-# Usage: anvil.sh [workspace_path] [claude args...]
+# Usage: anvil.sh [workspace_path] [--add-dir <path>...] [claude args...]
 # Plan mode: anvil.sh --allowedTools "Read,Grep,Glob,Task,WebFetch,WebSearch"
 
 set -euo pipefail
 
 CONFIG_DIR="$HOME/.devcontainers/anvil"
+OVERRIDE_FILE="$CONFIG_DIR/docker-compose.extra-dirs.yml"
 PROXY_PIDFILE="/tmp/anvil-tool-proxy.pid"
 PROXY_LOG="/tmp/anvil-tool-proxy.log"
 
@@ -25,7 +26,7 @@ if [ "${1:-}" = "update" ]; then
   exit 0
 fi
 
-# First arg is workspace path if it's a directory, otherwise default to ~/Repos
+# First arg is workspace path if it's a directory, otherwise default to cwd
 if [ $# -gt 0 ] && [ -d "$1" ]; then
   WORKSPACE="$(cd "$1" && pwd)"
   shift
@@ -33,7 +34,52 @@ else
   WORKSPACE="$(pwd)"
 fi
 
+# Parse --add-dir flags and collect remaining claude args
+EXTRA_DIRS=()
+CLAUDE_ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --add-dir)
+      if [ -n "${2:-}" ] && [ -d "$2" ]; then
+        EXTRA_DIRS+=("$(cd "$2" && pwd)")
+        shift 2
+      else
+        echo "[anvil] ERROR: --add-dir requires a valid directory path"
+        exit 1
+      fi
+      ;;
+    *)
+      CLAUDE_ARGS+=("$1")
+      shift
+      ;;
+  esac
+done
+
 export ANVIL_WORKSPACE="$WORKSPACE"
+
+# Generate docker-compose override for extra directories
+if [ ${#EXTRA_DIRS[@]} -gt 0 ]; then
+  {
+    echo "services:"
+    echo "  devcontainer:"
+    echo "    volumes:"
+    for dir in "${EXTRA_DIRS[@]}"; do
+      echo "      - ${dir}:/extra/$(basename "$dir"):cached"
+    done
+  } > "$OVERRIDE_FILE"
+  echo "[anvil] Extra directories:"
+  for dir in "${EXTRA_DIRS[@]}"; do
+    echo "[anvil]   $dir -> /extra/$(basename "$dir")"
+  done
+else
+  printf 'services:\n  devcontainer: {}\n' > "$OVERRIDE_FILE"
+fi
+
+# Build claude --add-dir flags for extra directories
+CLAUDE_ADD_DIRS=()
+for dir in "${EXTRA_DIRS[@]}"; do
+  CLAUDE_ADD_DIRS+=(--add-dir "/extra/$(basename "$dir")")
+done
 
 cleanup() {
   echo "[anvil] Cleaning up..."
@@ -43,7 +89,8 @@ cleanup() {
   fi
   lsof -ti :9876 2>/dev/null | xargs kill 2>/dev/null || true
   docker compose --project-name anvil \
-    -f "$CONFIG_DIR/docker-compose.yml" down 2>/dev/null || true
+    -f "$CONFIG_DIR/docker-compose.yml" \
+    -f "$OVERRIDE_FILE" down 2>/dev/null || true
 }
 
 # Cleanup on exit (ephemeral)
@@ -78,4 +125,4 @@ echo "[anvil] Launching Claude Code..."
 devcontainer exec \
   --workspace-folder "$WORKSPACE" \
   --config "$CONFIG_DIR/devcontainer.json" \
-  claude --dangerously-skip-permissions "$@"
+  claude --dangerously-skip-permissions ${CLAUDE_ADD_DIRS[@]+"${CLAUDE_ADD_DIRS[@]}"} ${CLAUDE_ARGS[@]+"${CLAUDE_ARGS[@]}"}
