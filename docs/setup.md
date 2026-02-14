@@ -1,8 +1,8 @@
-# Anvil — Sandboxed DevContainer Setup
+# Moat — Sandboxed DevContainer Setup
 
 ## Overview
 
-This document describes the sandboxed development container setup for running Claude Code with network isolation. Anvil runs Claude Code inside a Docker container that can only access whitelisted domains through a forward proxy, preventing unauthorized network access.
+This document describes the sandboxed development container setup for running Claude Code with network isolation. Moat runs Claude Code inside a Docker container that can only access whitelisted domains through a forward proxy, preventing unauthorized network access.
 
 ## Problem
 
@@ -53,10 +53,10 @@ Key properties:
 
 ## File Structure
 
-`~/.devcontainers/anvil/` is a **symlink** pointing to the cloned repo (default: `~/.local/share/anvil` for curl installs, or wherever you cloned for `setup.sh` installs). Runtime data lives separately in `~/.local/share/anvil-data/`.
+`~/.devcontainers/moat/` is a **symlink** pointing to the cloned repo (default: `~/.local/share/moat` for curl installs, or wherever you cloned for `setup.sh` installs). Runtime data lives separately in `~/.local/share/moat-data/`.
 
 ```
-~/.devcontainers/anvil/ → <repo>        # Symlink to cloned repo
+~/.devcontainers/moat/ → <repo>        # Symlink to cloned repo
 ├── devcontainer.json      # DevContainer CLI configuration
 ├── docker-compose.yml     # Two-service setup (squid + devcontainer)
 ├── Dockerfile             # DevContainer image (node:22, Claude Code, git-delta)
@@ -64,12 +64,12 @@ Key properties:
 ├── tool-proxy.mjs         # Host-side Node.js server for gh/git credential isolation
 ├── git-proxy-wrapper.sh   # Container-side git wrapper (proxies /workspace ops to host)
 ├── gh-proxy-wrapper.sh    # Container-side gh wrapper (proxies all ops to host)
-├── anvil.sh               # Host-side launcher script (starts proxy, container, Claude)
+├── moat.sh               # Host-side launcher script (starts proxy, container, Claude)
 ├── install.sh             # Lightweight curl-friendly installer
 ├── .proxy-token           # Copied from DATA_DIR before builds (in .gitignore)
 └── verify.sh              # Post-start verification script
 
-~/.local/share/anvil-data/
+~/.local/share/moat-data/
 └── .proxy-token           # Persistent bearer token (source of truth)
 ```
 
@@ -167,9 +167,9 @@ Credentials (GitHub tokens, SSH keys) never enter the container. Instead, a host
 
 Zero dynamic configuration — everything is static/baked-in:
 
-1. A **static bearer token** is generated once (`openssl rand -hex 32`) and stored in `~/.local/share/anvil-data/.proxy-token`. It is copied into the repo dir before Docker builds (the copy is in `.gitignore`), then baked into the Docker image at `/etc/tool-proxy-token`
+1. A **static bearer token** is generated once (`openssl rand -hex 32`) and stored in `~/.local/share/moat-data/.proxy-token`. It is copied into the repo dir before Docker builds (the copy is in `.gitignore`), then baked into the Docker image at `/etc/tool-proxy-token`
 2. The **proxy URL** (`http://host.docker.internal:9876`) is hardcoded in the wrapper scripts
-3. The launcher script starts `tool-proxy.mjs --workspace ~/Repos` on the host before the container, with `ANVIL_TOKEN_FILE` pointing to the data dir token
+3. The launcher script starts `tool-proxy.mjs --workspace ~/Repos` on the host before the container, with `MOAT_TOKEN_FILE` pointing to the data dir token
 4. **Path translation happens on the proxy side**: wrappers send container paths as-is (e.g., `/workspace/projects`), the proxy translates to host paths (e.g., `~/Repos/projects`)
 5. Inside the container, wrapper scripts at `/usr/local/bin/git` and `/usr/local/bin/gh` shadow the real binaries
 6. When Claude runs `git status` in `/workspace/projects`, the git wrapper:
@@ -217,34 +217,34 @@ Installed at `/usr/local/bin/gh`:
 
 ### Launcher Script
 
-The sandbox is launched via `~/.devcontainers/anvil/anvil.sh` (a bash script, not a zsh function — avoids zsh job control issues that killed the proxy process). The script resolves symlinks to find the repo directory, so it works whether invoked via the symlink or directly.
+The sandbox is launched via `~/.devcontainers/moat/moat.sh` (a bash script, not a zsh function — avoids zsh job control issues that killed the proxy process). The script resolves symlinks to find the repo directory, so it works whether invoked via the symlink or directly.
 
 ```bash
 # ~/.zshrc aliases
-alias anvil='~/.devcontainers/anvil/anvil.sh'
-alias anvil-plan='~/.devcontainers/anvil/anvil.sh --allowedTools "Read,Grep,Glob,Task,WebFetch,WebSearch"'
+alias moat='~/.devcontainers/moat/moat.sh'
+alias moat-plan='~/.devcontainers/moat/moat.sh --allowedTools "Read,Grep,Glob,Task,WebFetch,WebSearch"'
 ```
 
 ### Running
 
 ```bash
 # Full sandbox with all tools
-anvil
+moat
 
 # Plan mode — read-only tools only (no Write, Edit, Bash)
-anvil-plan
+moat-plan
 
 # Update (pull latest code + rebuild image)
-anvil update
+moat update
 ```
 
 ### What Happens on Launch
 
-1. `anvil.sh` resolves symlinks to find `REPO_DIR` (the actual repo checkout)
-2. Ensures `~/.local/share/anvil-data/` exists with a proxy token (auto-generates or migrates from old installs)
+1. `moat.sh` resolves symlinks to find `REPO_DIR` (the actual repo checkout)
+2. Ensures `~/.local/share/moat-data/` exists with a proxy token (auto-generates or migrates from old installs)
 3. Copies the proxy token into the repo dir for Docker build context
 4. Any previous sandbox session is torn down (ephemeral) — proxy killed, containers removed
-5. Tool proxy starts on the host (`127.0.0.1:9876`), reads token via `ANVIL_TOKEN_FILE` env var
+5. Tool proxy starts on the host (`127.0.0.1:9876`), reads token via `MOAT_TOKEN_FILE` env var
 6. `devcontainer up` starts squid + devcontainer, waits for squid health check
 7. `verify-sandbox.sh` runs: validates proxy, network isolation, token file, and tool proxy connectivity
 8. Claude Code launches with `--dangerously-skip-permissions`
@@ -252,7 +252,7 @@ anvil update
 
 ### Update
 
-`anvil update` pulls the latest code via `git -C "$REPO_DIR" pull --ff-only`, then rebuilds the Docker image with `--no-cache`. To pin a specific Claude Code version: `anvil update --version 1.0.0`.
+`moat update` pulls the latest code via `git -C "$REPO_DIR" pull --ff-only`, then rebuilds the Docker image with `--no-cache`. To pin a specific Claude Code version: `moat update --version 1.0.0`.
 
 ### Teardown
 
@@ -260,7 +260,7 @@ Automatic on exit (bash EXIT trap). The script also cleans up any previous sessi
 
 ### Rebuild (after config changes)
 
-Just run `anvil` again — the cleanup runs first, and the devcontainer CLI detects Dockerfile/compose changes and rebuilds automatically.
+Just run `moat` again — the cleanup runs first, and the devcontainer CLI detects Dockerfile/compose changes and rebuilds automatically.
 
 ## Adding New Domains
 
@@ -270,20 +270,20 @@ Edit `squid.conf` in the repo and add:
 acl allowed_domains dstdomain .example.com
 ```
 
-Then restart the squid container (or just re-run `anvil` — it rebuilds automatically).
+Then restart the squid container (or just re-run `moat` — it rebuilds automatically).
 
 Note: Use a leading dot (`.example.com`) to match the domain and all subdomains. Squid 6 does not allow both `example.com` and `.example.com` in the same ACL — the dot form covers both.
 
 ## Plan Mode
 
-`anvil-plan` launches Claude with `--allowedTools "Read,Grep,Glob,Task,WebFetch,WebSearch"` — only read-only tools. This prevents Claude from writing files, running commands, or making edits during planning/research phases.
+`moat-plan` launches Claude with `--allowedTools "Read,Grep,Glob,Task,WebFetch,WebSearch"` — only read-only tools. This prevents Claude from writing files, running commands, or making edits during planning/research phases.
 
 ## Ephemeral Containers
 
 Containers are torn down after each session:
 - The launcher script's `trap cleanup EXIT` runs automatically when Claude exits
 - Kills the tool proxy process, runs `docker compose down`
-- **Persistent volumes** (`anvil-bashhistory`, `anvil-config`) survive teardowns — bash history and Claude config carry over between sessions
+- **Persistent volumes** (`moat-bashhistory`, `moat-config`) survive teardowns — bash history and Claude config carry over between sessions
 - A fresh container is built each time (with Docker layer caching, this is fast)
 
 ## Resource Limits
@@ -336,7 +336,7 @@ Add the missing domain to `squid.conf`. Known required domains:
 
 ### Squid container unhealthy
 
-Check logs: `docker logs anvil-squid-1`
+Check logs: `docker logs moat-squid-1`
 
 Common issues:
 - **Duplicate domain entries**: Squid 6 rejects both `example.com` and `.example.com` in the same ACL. Use only the dot form.
@@ -427,4 +427,4 @@ When the tool proxy is down, squid returns a 503 HTML error page instead of a JS
 
 Background processes started in zsh functions (`node proxy.mjs &`) are unreliable — the proxy frequently dies or never starts. Symptoms: no pid file, empty log file, `kill -0 $PID` fails immediately. Tried `nohup`, `disown`, `</dev/null` redirection — none worked consistently.
 
-**Fix**: The launcher is a standalone bash script (`anvil.sh`) instead of a zsh function. Bash's `trap cleanup EXIT` reliably manages the proxy lifecycle. The zsh side just has aliases pointing to the script.
+**Fix**: The launcher is a standalone bash script (`moat.sh`) instead of a zsh function. Bash's `trap cleanup EXIT` reliably manages the proxy lifecycle. The zsh side just has aliases pointing to the script.

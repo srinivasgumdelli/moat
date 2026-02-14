@@ -1,8 +1,8 @@
-# Anvil
+# Moat
 
 A sandboxed environment for running [Claude Code](https://github.com/anthropics/claude-code) with network isolation, credential isolation, and infrastructure-as-code safety controls.
 
-Claude Code runs inside a Docker container with `--dangerously-skip-permissions`. Anvil makes that safe by ensuring the container can only reach whitelisted domains, never touches cloud credentials directly, and cannot mutate infrastructure.
+Claude Code runs inside a Docker container with `--dangerously-skip-permissions`. Moat makes that safe by ensuring the container can only reach whitelisted domains, never touches cloud credentials directly, and cannot mutate infrastructure.
 
 ## How it works
 
@@ -35,31 +35,31 @@ Claude Code runs inside a Docker container with `--dangerously-skip-permissions`
 **Option A — curl installer** (if you already have Docker, Node, and git):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/srinivasgumdelli/anvil/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/srinivasgumdelli/moat/main/install.sh | bash
 ```
 
 **Option B — full setup** (installs prerequisites via Homebrew):
 
 ```bash
-git clone git@github.com:srinivasgumdelli/anvil.git
-cd anvil
+git clone git@github.com:srinivasgumdelli/moat.git
+cd moat
 ./setup.sh
 ```
 
 Then:
 
 ```bash
-anvil                                        # full access (workspace = cwd)
-anvil ~/Projects/myapp                       # target a specific directory
-anvil --add-dir ~/Projects/shared-lib        # mount extra directories
-anvil ~/Projects/myapp --add-dir ~/lib-a --add-dir ~/lib-b
-anvil-plan                                   # read-only tools only (no Write, Edit, Bash)
+moat                                        # full access (workspace = cwd)
+moat ~/Projects/myapp                       # target a specific directory
+moat --add-dir ~/Projects/shared-lib        # mount extra directories
+moat ~/Projects/myapp --add-dir ~/lib-a --add-dir ~/lib-b
+moat-plan                                   # read-only tools only (no Write, Edit, Bash)
 ```
 
 **Update** (pulls latest code + rebuilds the Docker image):
 
 ```bash
-anvil update
+moat update
 ```
 
 Extra directories are mounted at `/extra/<dirname>` inside the container and automatically registered with Claude Code via `--add-dir`.
@@ -132,13 +132,13 @@ Edit `squid.conf` and add:
 acl allowed_domains dstdomain .example.com
 ```
 
-Then re-run `anvil` (the container rebuilds automatically).
+Then re-run `moat` (the container rebuilds automatically).
 
 ## Project structure
 
 ```
-anvil/
-├── anvil.sh                    # Launcher (starts proxy, container, Claude)
+moat/
+├── moat.sh                    # Launcher (starts proxy, container, Claude)
 ├── setup.sh                    # Full setup (installs prerequisites + configures)
 ├── install.sh                  # Lightweight curl-friendly installer
 ├── tool-proxy.mjs              # Host-side proxy server with allowlists

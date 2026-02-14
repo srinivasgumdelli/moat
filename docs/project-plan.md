@@ -1,4 +1,4 @@
-# Anvil — Project Plan
+# Moat — Project Plan
 
 ## Context
 
@@ -53,7 +53,7 @@ Implementation: The proxy checks `args[0]` (subcommand) against the allowlist be
 
 ### Files to Create
 
-All in the repo (symlinked from `~/.devcontainers/anvil/`):
+All in the repo (symlinked from `~/.devcontainers/moat/`):
 
 | File | Purpose |
 |------|---------|
@@ -175,17 +175,17 @@ AWS/GCP/Azure API domains are NOT added to squid — cloud API calls happen on t
 
 **Full setup** (installs prerequisites via Homebrew):
 ```bash
-git clone ... && cd anvil && ./setup.sh
+git clone ... && cd moat && ./setup.sh
 ```
 
 **Curl installer** (assumes Docker, Node, git already installed):
 ```bash
-curl -fsSL https://raw.githubusercontent.com/srinivasgumdelli/anvil/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/srinivasgumdelli/moat/main/install.sh | bash
 ```
 
 **Update** (one command):
 ```bash
-anvil update
+moat update
 ```
 
 ### What `setup.sh` Does
@@ -199,18 +199,18 @@ anvil update
 
 2. Link configuration
    ├── Migrate old directory-based installs (preserve .proxy-token)
-   ├── Create symlink: ~/.devcontainers/anvil/ → repo dir
+   ├── Create symlink: ~/.devcontainers/moat/ → repo dir
    └── No file copying — repo is used directly
 
 3. Generate proxy token
-   ├── If ~/.local/share/anvil-data/.proxy-token exists → skip
+   ├── If ~/.local/share/moat-data/.proxy-token exists → skip
    ├── Otherwise: openssl rand -hex 32, chmod 600
    └── Copy token into repo for Docker build context
 
 4. Configure shell
    ├── Detect shell (zsh/bash)
    ├── If aliases already exist → skip
-   └── Append anvil aliases to shell rc
+   └── Append moat aliases to shell rc
 
 5. Build Docker image
    ├── docker compose build (uses host network, full internet access)
@@ -224,10 +224,10 @@ Lightweight version — skips Homebrew/prerequisite installs:
 ```
 1. Check prerequisites (git, docker, node) — error with instructions if missing
 2. Install devcontainer CLI if missing
-3. Clone repo to ~/.local/share/anvil (or git pull if exists)
-4. Create symlink ~/.devcontainers/anvil/ → repo
+3. Clone repo to ~/.local/share/moat (or git pull if exists)
+4. Create symlink ~/.devcontainers/moat/ → repo
 5. Migrate old directory-based installs
-6. Generate proxy token in ~/.local/share/anvil-data/
+6. Generate proxy token in ~/.local/share/moat-data/
 7. Add shell aliases
 8. Build Docker image
 ```
@@ -311,10 +311,10 @@ ANTHROPIC_API_KEY:
   Protected by: network isolation (can only reach anthropic.com through squid)
 
 Proxy token (.proxy-token):
-  Source of truth: ~/.local/share/anvil-data/.proxy-token
+  Source of truth: ~/.local/share/moat-data/.proxy-token
   Copied into repo dir before Docker builds (in .gitignore)
   Baked into Docker image at /etc/tool-proxy-token
-  tool-proxy.mjs reads via ANVIL_TOKEN_FILE env var (fallback: __dirname/.proxy-token)
+  tool-proxy.mjs reads via MOAT_TOKEN_FILE env var (fallback: __dirname/.proxy-token)
   Not a credential — it's an auth token for the local proxy
   Only useful from within the Docker network
 ```
@@ -456,7 +456,7 @@ Added to the Docker image (all three languages):
 8. `aws ec2 terminate-instances` → **BLOCKED**
 9. `./setup.sh` on a clean machine → installs everything, creates symlink, builds image, ready to run
 10. `curl ... | bash` on machine with prereqs → clones repo, creates symlink, builds image
-11. `anvil update` → pulls latest code, rebuilds image
+11. `moat update` → pulls latest code, rebuilds image
 
 ## Gotchas
 

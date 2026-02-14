@@ -1,4 +1,4 @@
-# Anvil — Claude Code Instructions
+# Moat — Claude Code Instructions
 
 ## Workflow
 - Always commit and push changes without asking.
