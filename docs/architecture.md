@@ -13,7 +13,7 @@ The devcontainer at `/Users/sri/.devcontainers/anvil/` uses iptables rules to re
                     |
           Internal Network (sandbox, internal: true)
                     |
-              [devcontainer]    (amd64 under Rosetta)
+              [devcontainer]    (native arm64)
               HTTP_PROXY=http://squid:3128
 ```
 
@@ -61,7 +61,7 @@ Rules: deny CONNECT to non-SSL ports, allow whitelisted domains, deny all else. 
 
 ## Step 3: Create `verify-sandbox.sh`
 
-Checks (runs as `codespace`, no sudo needed):
+Checks (runs as `node`, no sudo needed):
 1. `HTTPS_PROXY` env var is set
 2. Allowed domain reachable through proxy (api.github.com)
 3. Blocked domain denied by proxy (example.com)

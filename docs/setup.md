@@ -8,7 +8,7 @@ This document describes the sandboxed development container setup for running Cl
 
 The original setup used `iptables` firewall rules inside the container to restrict outbound network access. This approach failed on Apple Silicon Macs because:
 
-1. The `mcr.microsoft.com/devcontainers/universal:2` base image is amd64-only, requiring Rosetta emulation
+1. The original `mcr.microsoft.com/devcontainers/universal:2` base image was amd64-only, requiring Rosetta emulation (now replaced with `node:22` which has native arm64)
 2. `iptables` (both legacy and nft backends) cannot access kernel netfilter modules under Rosetta
 3. The firewall script required `NET_ADMIN`/`NET_RAW` capabilities and root access
 
@@ -59,14 +59,14 @@ All configuration lives in `~/.devcontainers/anvil/` (source of truth in the rep
 ~/.devcontainers/anvil/
 ├── devcontainer.json      # DevContainer CLI configuration
 ├── docker-compose.yml     # Two-service setup (squid + devcontainer)
-├── Dockerfile             # DevContainer image (amd64, Claude Code, git-delta)
+├── Dockerfile             # DevContainer image (node:22, Claude Code, git-delta)
 ├── squid.conf             # Squid proxy domain whitelist
 ├── tool-proxy.mjs         # Host-side Node.js server for gh/git credential isolation
 ├── git-proxy-wrapper.sh   # Container-side git wrapper (proxies /workspace ops to host)
 ├── gh-proxy-wrapper.sh    # Container-side gh wrapper (proxies all ops to host)
 ├── anvil.sh      # Host-side launcher script (starts proxy, container, Claude)
 ├── .proxy-token           # Static bearer token (NOT committed — in .gitignore)
-└── verify-sandbox.sh      # Post-start verification script
+└── verify.sh              # Post-start verification script
 ```
 
 ## How Each File Works
@@ -82,7 +82,7 @@ Defines two services:
 - Healthcheck: `squid -k check` every 10s
 
 **devcontainer** — The Claude Code environment:
-- Built from `Dockerfile` (amd64 under Rosetta)
+- Built from `Dockerfile` (native arm64 on Apple Silicon)
 - Connected to `sandbox` network ONLY (no external access)
 - Waits for squid to be healthy before starting
 - Sets proxy env vars: `HTTP_PROXY`, `HTTPS_PROXY`, `http_proxy`, `https_proxy` (both cases for tool compatibility)
@@ -120,16 +120,17 @@ Leading dot (`.github.com`) matches the domain and all subdomains.
 
 ### Dockerfile
 
-Based on `mcr.microsoft.com/devcontainers/universal:2` (forced to `linux/amd64`):
+Based on `node:22` (native arm64 on Apple Silicon):
 
-1. Removes expired Yarn GPG key from the base image
+1. Installs basic development tools (git, jq, zsh, curl, etc.) via apt-get
 2. Persists bash history across container restarts
-3. Creates Claude config directory
+3. Creates workspace and Claude config directories
 4. Installs git-delta for enhanced diffs
-5. Installs Claude Code CLI (`@anthropic-ai/claude-code`)
-6. Configures git to use HTTPS instead of SSH (SSH can't traverse an HTTP proxy)
-7. Copies tool proxy wrapper scripts (`git-proxy-wrapper.sh` → `/usr/local/bin/git`, `gh-proxy-wrapper.sh` → `/usr/local/bin/gh`) — these shadow the real binaries since `/usr/local/bin` is earlier in `PATH` than `/usr/bin`
-8. Copies the sandbox verification script
+5. Installs IaC tools (terraform, kubectl, aws-cli) with arch-aware downloads
+6. Installs Claude Code CLI (`@anthropic-ai/claude-code`) in user-writable npm prefix
+7. Configures git to use HTTPS instead of SSH (SSH can't traverse an HTTP proxy)
+8. Copies tool proxy wrapper scripts (`git-proxy-wrapper.sh` → `/usr/local/bin/git`, `gh-proxy-wrapper.sh` → `/usr/local/bin/gh`, plus terraform/kubectl/aws wrappers) — these shadow the real binaries since `/usr/local/bin` is earlier in `PATH` than `/usr/bin`
+9. Copies the verification script
 
 No firewall packages (iptables, ipset, etc.) are needed.
 
@@ -138,7 +139,7 @@ No firewall packages (iptables, ipset, etc.) are needed.
 Tells the devcontainer CLI to use docker-compose mode:
 - References `docker-compose.yml` and the `devcontainer` service
 - Passes `ANTHROPIC_API_KEY` from the host via `remoteEnv` (the `${localEnv:...}` syntax only works in devcontainer.json)
-- Runs `verify-sandbox.sh` as the `postStartCommand`
+- Runs `verify.sh` as the `postStartCommand`
 - Configures VS Code extensions (Claude Code, ESLint, Prettier, GitLens)
 
 ### verify-sandbox.sh
@@ -152,7 +153,7 @@ Runs on container start to validate the sandbox is working:
 5. Checks git HTTPS rewrite is configured
 6. Tests tool proxy health endpoint (`http://host.docker.internal:9876/health`) and verifies `/etc/tool-proxy-token` exists
 
-No root/sudo required — runs as the `codespace` user.
+No root/sudo required — runs as the `node` user.
 
 ## Tool Proxy (Credential Isolation)
 
@@ -295,7 +296,7 @@ Set in `docker-compose.yml` via `deploy.resources.limits`:
 | Git HTTPS rewrite | `git config url.insteadOf` | SSH connections (can't traverse HTTP proxy) |
 | Tool proxy | Credentials stay on host, static bearer token auth, binds `127.0.0.1` only | Credential leakage into container |
 | CLI wrappers | Shadow real git/gh binaries | Container accessing git/gh with host credentials directly |
-| Non-root user | Runs as `codespace` user | Privilege escalation |
+| Non-root user | Runs as `node` user | Privilege escalation |
 | No NET_ADMIN/NET_RAW | Capabilities not granted | Kernel-level network manipulation |
 | Resource limits | CPU/memory caps via docker-compose | Resource exhaustion on host |
 | Ephemeral containers | Torn down after each session | State accumulation, persistent compromises |

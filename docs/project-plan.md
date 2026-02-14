@@ -267,7 +267,7 @@ One-command installation that gets a new user from zero to running:
 | 7 | Git HTTPS rewrite | SSH connections (can't traverse HTTP proxy) | Configured in git global config |
 | 8 | Credential isolation | Cloud creds, GitHub tokens entering container | Creds only exist on host; proxy mediates |
 | 9 | Proxy binds 127.0.0.1 | Network-level proxy access | Only reachable via Docker Desktop gateway |
-| 10 | Non-root user | Privilege escalation in container | Runs as `codespace` user |
+| 10 | Non-root user | Privilege escalation in container | Runs as `node` user |
 | 11 | Resource limits | DoS / resource exhaustion | 4 CPU, 8GB RAM caps |
 | 12 | Ephemeral containers | Persistent compromise | Torn down after each session |
 
