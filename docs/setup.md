@@ -217,12 +217,11 @@ Installed at `/usr/local/bin/gh`:
 
 ### Launcher Script
 
-The sandbox is launched via `~/.devcontainers/moat/moat.sh` (a bash script, not a zsh function — avoids zsh job control issues that killed the proxy process). The script resolves symlinks to find the repo directory, so it works whether invoked via the symlink or directly.
+The sandbox is launched via `moat` (a symlink at `~/.local/bin/moat` → `<repo>/moat.sh`). The script is a bash script (not a zsh function — avoids zsh job control issues that killed the proxy process) and resolves symlinks to find the repo directory.
 
 ```bash
-# ~/.zshrc aliases
-alias moat='~/.devcontainers/moat/moat.sh'
-alias moat-plan='~/.devcontainers/moat/moat.sh --allowedTools "Read,Grep,Glob,Task,WebFetch,WebSearch"'
+# ~/.local/bin/moat is a symlink to <repo>/moat.sh
+# Ensure ~/.local/bin is on PATH (setup.sh/install.sh handle this automatically)
 ```
 
 ### Running
@@ -232,7 +231,7 @@ alias moat-plan='~/.devcontainers/moat/moat.sh --allowedTools "Read,Grep,Glob,Ta
 moat
 
 # Plan mode — read-only tools only (no Write, Edit, Bash)
-moat-plan
+moat plan
 
 # Update (pull latest code + rebuild image)
 moat update
@@ -276,7 +275,7 @@ Note: Use a leading dot (`.example.com`) to match the domain and all subdomains.
 
 ## Plan Mode
 
-`moat-plan` launches Claude with `--allowedTools "Read,Grep,Glob,Task,WebFetch,WebSearch"` — only read-only tools. This prevents Claude from writing files, running commands, or making edits during planning/research phases.
+`moat plan` launches Claude with `--allowedTools "Read,Grep,Glob,Task,WebFetch,WebSearch"` — only read-only tools. This prevents Claude from writing files, running commands, or making edits during planning/research phases.
 
 ## Ephemeral Containers
 

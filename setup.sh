@@ -146,8 +146,13 @@ cp "$TOKEN_FILE" "$REPO_DIR/.proxy-token"
 
 echo ""
 
-# --- 4. Configure shell aliases ---
+# --- 4. Install moat on PATH ---
 echo "--- Shell configuration ---"
+
+# Create symlink in ~/.local/bin
+mkdir -p "$HOME/.local/bin"
+ln -sf "$REPO_DIR/moat.sh" "$HOME/.local/bin/moat"
+echo "PASS: Symlink created: ~/.local/bin/moat -> $REPO_DIR/moat.sh"
 
 # Detect shell rc file
 if [ -f "$HOME/.zshrc" ]; then
@@ -158,16 +163,23 @@ else
   SHELL_RC="$HOME/.profile"
 fi
 
+# Migrate old aliases
 if grep -q "alias moat=" "$SHELL_RC" 2>/dev/null; then
-  echo "PASS: Shell aliases already in $SHELL_RC"
-else
-  cat >> "$SHELL_RC" << 'ALIASES'
+  sed -i.bak '/# Moat — sandboxed Claude Code/d; /alias moat=/d; /alias moat-plan=/d' "$SHELL_RC"
+  rm -f "${SHELL_RC}.bak"
+  echo "PASS: Removed old aliases from $SHELL_RC"
+fi
 
-# Moat — sandboxed Claude Code
-alias moat='~/.devcontainers/moat/moat.sh'
-alias moat-plan='~/.devcontainers/moat/moat.sh --allowedTools "Read,Grep,Glob,Task,WebFetch,WebSearch"'
-ALIASES
-  echo "PASS: Aliases added to $SHELL_RC"
+# Ensure ~/.local/bin is on PATH
+if ! grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$SHELL_RC" 2>/dev/null; then
+  if echo "$PATH" | tr ':' '\n' | grep -qx "$HOME/.local/bin"; then
+    echo "PASS: ~/.local/bin already on PATH"
+  else
+    printf '\n# Moat — sandboxed Claude Code\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$SHELL_RC"
+    echo "PASS: Added ~/.local/bin to PATH in $SHELL_RC"
+  fi
+else
+  echo "PASS: ~/.local/bin already in $SHELL_RC"
 fi
 
 echo ""
@@ -205,11 +217,11 @@ echo "Usage:"
 echo "  moat                                     # Full access (default: cwd)"
 echo "  moat ~/Projects/myapp                   # Target a specific repo"
 echo "  moat . --add-dir ~/Projects/shared-lib  # Mount extra directories"
-echo "  moat-plan                               # Read-only tools only"
+echo "  moat plan                               # Read-only tools only"
 echo ""
 echo "Update:"
 echo "  moat update                             # Pull latest + rebuild"
 echo ""
-echo "You may need to restart your shell for aliases to take effect:"
+echo "You may need to restart your shell for PATH changes to take effect:"
 echo "  source $SHELL_RC"
 echo ""

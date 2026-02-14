@@ -1,7 +1,7 @@
 #!/bin/bash
 # Moat — sandboxed Claude Code launcher
 # Usage: moat.sh [workspace_path] [--add-dir <path>...] [claude args...]
-# Plan mode: moat.sh --allowedTools "Read,Grep,Glob,Task,WebFetch,WebSearch"
+# Plan mode: moat.sh plan [workspace_path] [claude args...]
 
 set -euo pipefail
 
@@ -61,16 +61,21 @@ if [ "${1:-}" = "doctor" ]; then
   check_fail() { echo "  FAIL: $1"; FAILS=$((FAILS + 1)); }
   check_info() { echo "  INFO: $1"; }
 
-  # Symlink exists and points to repo
-  if [ -L "$HOME/.devcontainers/moat" ]; then
-    target="$(readlink "$HOME/.devcontainers/moat")"
-    if [ "$target" = "$REPO_DIR" ]; then
-      check_pass "Symlink ~/.devcontainers/moat -> $REPO_DIR"
+  # moat executable on PATH via ~/.local/bin
+  if [ -L "$HOME/.local/bin/moat" ]; then
+    target="$(readlink "$HOME/.local/bin/moat")"
+    if [ "$target" = "$REPO_DIR/moat.sh" ]; then
+      check_pass "Symlink ~/.local/bin/moat -> $REPO_DIR/moat.sh"
     else
-      check_fail "Symlink ~/.devcontainers/moat points to $target (expected $REPO_DIR)"
+      check_warn "Symlink ~/.local/bin/moat points to $target (expected $REPO_DIR/moat.sh)"
     fi
   else
-    check_fail "Symlink ~/.devcontainers/moat does not exist"
+    check_fail "moat not found in ~/.local/bin (run setup.sh or install.sh)"
+  fi
+
+  # Legacy symlink (informational)
+  if [ -L "$HOME/.devcontainers/moat" ]; then
+    check_info "Legacy symlink ~/.devcontainers/moat still present"
   fi
 
   # Token in data dir
@@ -168,6 +173,12 @@ if [ "${1:-}" = "update" ]; then
     -f "$OVERRIDE_FILE" build --no-cache "${BUILD_ARGS[@]}"
   echo "[moat] Update complete."
   exit 0
+fi
+
+# Handle plan subcommand — inject read-only tool restriction
+if [ "${1:-}" = "plan" ]; then
+  shift
+  set -- --allowedTools "Read,Grep,Glob,Task,WebFetch,WebSearch" "$@"
 fi
 
 # First arg is workspace path if it's a directory, otherwise default to cwd

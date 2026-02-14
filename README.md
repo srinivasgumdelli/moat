@@ -53,7 +53,7 @@ moat                                        # full access (workspace = cwd)
 moat ~/Projects/myapp                       # target a specific directory
 moat --add-dir ~/Projects/shared-lib        # mount extra directories
 moat ~/Projects/myapp --add-dir ~/lib-a --add-dir ~/lib-b
-moat-plan                                   # read-only tools only (no Write, Edit, Bash)
+moat plan                                   # read-only tools only (no Write, Edit, Bash)
 ```
 
 **Diagnose** setup issues:
