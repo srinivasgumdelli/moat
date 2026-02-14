@@ -12,7 +12,8 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.TOOL_PROXY_PORT || '9876');
-const TOKEN = readFileSync(join(__dirname, '.proxy-token'), 'utf-8').trim();
+const TOKEN_PATH = process.env.ANVIL_TOKEN_FILE || join(__dirname, '.proxy-token');
+const TOKEN = readFileSync(TOKEN_PATH, 'utf-8').trim();
 
 // Parse --workspace argument (host path that maps to /workspace in container)
 const wsIdx = process.argv.indexOf('--workspace');
