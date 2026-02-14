@@ -1,7 +1,7 @@
 #!/bin/bash
 # Moat — sandboxed Claude Code launcher
 # Usage: moat.sh [workspace_path] [--add-dir <path>...] [claude args...]
-# Subcommands: doctor | update [--version X.Y.Z] | down | plan
+# Subcommands: doctor | update [--version X.Y.Z] | down | plan | uninstall
 
 set -euo pipefail
 
@@ -24,6 +24,12 @@ DATA_DIR="$HOME/.moat/data"
 OVERRIDE_FILE="$REPO_DIR/docker-compose.extra-dirs.yml"
 PROXY_PIDFILE="/tmp/moat-tool-proxy.pid"
 PROXY_LOG="/tmp/moat-tool-proxy.log"
+
+# Handle uninstall early — before creating any directories
+if [ "${1:-}" = "uninstall" ]; then
+  shift
+  exec bash "$REPO_DIR/uninstall.sh" "$@"
+fi
 
 # Ensure data directory exists
 mkdir -p "$DATA_DIR"
