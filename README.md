@@ -79,6 +79,31 @@ Extra directories are mounted at `/extra/<dirname>` inside the container and aut
 | Resource limits | CPU/memory exhaustion |
 | Ephemeral containers | Persistent compromise |
 
+## IDE features
+
+The container includes IDE-level tooling for TypeScript, Python, and Go:
+
+**Auto-diagnostics** (PostToolUse hook): After every file edit, fast linters run automatically and inject diagnostics into Claude's context:
+- TypeScript/JavaScript: project-local `eslint`
+- Python: `ruff`
+- Go: `go vet`
+
+**Deep analysis tools** (`ide-tools` MCP server): Claude can explicitly call:
+- `run_diagnostics` — full type-check/lint (`tsc --noEmit`, `pyright`, `golangci-lint`)
+- `run_tests` — structured test output (`vitest`/`jest`, `pytest`, `go test`)
+- `list_tests` — list available tests without running them
+- `get_project_info` — detect language, framework, test runner, build system
+
+**Code intelligence** (`ide-lsp` MCP server): Persistent language server connections give Claude:
+- `lsp_hover` — type info and docs at a position
+- `lsp_definition` — go to definition
+- `lsp_references` — find all references
+- `lsp_diagnostics` — errors/warnings for a file
+- `lsp_symbols` — list symbols in a file
+- `lsp_workspace_symbols` — search symbols across workspace
+
+Language servers (`typescript-language-server`, `pyright`, `gopls`) start lazily on first use and persist for the session.
+
 ## IaC safety controls
 
 **Terraform** (plan-only): `init`, `plan`, `validate`, `fmt`, `show`, `output`, `graph`, `providers`, `version` are allowed. `apply`, `destroy`, `import`, `taint` are blocked.
@@ -115,6 +140,9 @@ anvil/
 ├── terraform-proxy-wrapper.sh  # Container-side terraform wrapper
 ├── kubectl-proxy-wrapper.sh    # Container-side kubectl wrapper
 ├── aws-proxy-wrapper.sh        # Container-side aws wrapper
+├── auto-diagnostics.sh         # PostToolUse hook for linting after edits
+├── ide-tools.mjs               # MCP server: diagnostics, tests, project info
+├── ide-lsp.mjs                 # MCP server: LSP code intelligence
 └── docs/
     ├── setup.md                # Detailed setup guide
     ├── project-plan.md         # Roadmap and architecture decisions

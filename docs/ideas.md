@@ -166,21 +166,21 @@ The container reads this on start and configures itself accordingly.
 
 ## Priority Order (suggested)
 
-1. **Language servers via CLI** — highest value, moderate effort. Start with `tsc --noEmit` and `pyright`, no bridge needed
-2. **Structured test output** — easy, just use `--json` flags that already exist
-3. **File watcher + auto-lint** — medium effort, catches errors before Claude moves on
+1. ~~**Language servers via CLI**~~ — **DONE** (Phase 4b: `ide-tools.mjs` wraps `tsc --noEmit`, `pyright`, `golangci-lint`)
+2. ~~**Structured test output**~~ — **DONE** (Phase 4b: `run_tests` tool with JSON output from vitest/pytest/go test)
+3. ~~**File watcher + auto-lint**~~ — **DONE** (Phase 4a: `auto-diagnostics.sh` PostToolUse hook runs eslint/ruff/go vet)
 4. **Per-project config** — enables everything else to be project-specific
 5. **Web preview / screenshots** — essential for frontend work
 6. **Background services** — essential for full-stack work
-7. **LSP MCP bridge** — the "real" solution for code intelligence, higher effort
+7. ~~**LSP MCP bridge**~~ — **DONE** (Phase 4c: `ide-lsp.mjs` manages persistent typescript-language-server/pyright/gopls)
 8. **Terminal multiplexer** — quality of life, not urgent
 9. **Debugging tools** — high value but hard to get right for LLMs
 10. **Indexing / embeddings** — useful for large codebases, can defer
 
 ## Open Questions
 
-- Should language servers run persistently or on-demand? Persistent is faster but uses memory
+- ~~Should language servers run persistently or on-demand?~~ **Resolved**: Lazy-start, then persistent for the session (ide-lsp.mjs)
 - How much of this should be in the container vs. on the host via the tool proxy?
 - Should Claude be able to install its own tools, or is the set fixed per image?
 - How do we handle projects that need specific runtime versions (node 18 vs 22, python 3.11 vs 3.12)?
-- Is there a way to give Claude "IDE actions" without the token overhead of describing every LSP capability?
+- ~~Is there a way to give Claude "IDE actions" without the token overhead of describing every LSP capability?~~ **Resolved**: MCP tools with concise formatted output (file:line:col format, not raw LSP JSON)

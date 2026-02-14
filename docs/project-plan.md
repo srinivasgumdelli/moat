@@ -327,20 +327,86 @@ The tool proxy logs every command to stderr (`/tmp/claude-tool-proxy.log`):
 
 ---
 
-## Phase 4: IDE Features (Future)
+## Phase 4: IDE Features (Implemented)
 
-Lower priority — build after phases 1-3 are solid.
+Three integration layers, each independently valuable:
 
-### Auto-Diagnostics Hook
-PostToolUse hook on Edit/Write → run fast per-file linters (eslint, ruff, go vet) → inject diagnostics into Claude's context via `additionalContext`.
+### Phase 4a: Auto-Diagnostics Hook (done)
 
-### MCP Servers
-- **ide-tools**: `get_diagnostics`, `run_tests`, `list_tests`, `get_project_info` — wraps CLI tools (tsc, pyright, golangci-lint, vitest, pytest, go test)
-- **ide-lsp**: `goto_definition`, `find_references`, `get_hover`, `get_file_symbols` — manages persistent LSP connections (typescript-language-server, pyright-langserver, gopls, rust-analyzer)
-- **playwright**: Off-the-shelf `@playwright/mcp` for web preview, screenshots, DOM inspection
+**File**: `auto-diagnostics.sh` → `/home/node/.claude/hooks/auto-diagnostics.sh`
 
-### Config Management
-`init-ide.sh` runs as postStartCommand, idempotently registers MCP servers and merges hook config. Solves the persistent volume vs. config problem.
+Sync PostToolUse hook runs after every Edit/Write. Reads `tool_input.file_path` from stdin, runs the appropriate fast linter, and injects diagnostics via `additionalContext`:
+
+| Extension | Linter | Notes |
+|-----------|--------|-------|
+| `.ts`, `.tsx`, `.js`, `.jsx` | project-local `eslint` | Only runs if `node_modules/.bin/eslint` exists |
+| `.py` | `ruff check` | Installed globally in image |
+| `.go` | `go vet` | Runs on package directory |
+
+Registered in `settings.json` with matcher `Edit|Write`, 30s timeout.
+
+### Phase 4b: ide-tools MCP Server (done)
+
+**File**: `ide-tools.mjs` → `/home/node/.claude/mcp/ide-tools.mjs`
+
+Stateless MCP server — each tool call spawns a subprocess, captures structured output, returns JSON.
+
+| Tool | Description | Backend |
+|------|-------------|---------|
+| `run_diagnostics` | Full type-check/lint for a file or project | `tsc --noEmit`, `pyright --outputjson`, `golangci-lint run --out-format json` |
+| `run_tests` | Run tests with structured JSON output | `vitest --reporter=json`, `pytest --json-report`, `go test -json` |
+| `list_tests` | List available tests without running them | `vitest list`, `pytest --collect-only`, `go test -list` |
+| `get_project_info` | Detect language, framework, test runner, build system | Reads `package.json`, `pyproject.toml`, `go.mod` |
+
+Auto-detects language from file extension or project files. Auto-detects project root by walking up to find `package.json`, `go.mod`, etc.
+
+### Phase 4c: ide-lsp MCP Server (done)
+
+**File**: `ide-lsp.mjs` → `/home/node/.claude/mcp/ide-lsp.mjs`
+
+MCP server managing persistent language server connections over stdio JSON-RPC with Content-Length framing.
+
+| Tool | LSP Method |
+|------|------------|
+| `lsp_hover` | `textDocument/hover` |
+| `lsp_definition` | `textDocument/definition` |
+| `lsp_references` | `textDocument/references` |
+| `lsp_diagnostics` | `textDocument/publishDiagnostics` (cached) |
+| `lsp_symbols` | `textDocument/documentSymbol` |
+| `lsp_workspace_symbols` | `workspace/symbol` |
+
+Language servers start lazily on first tool call for that language, then persist for the MCP server's lifetime (= Claude session):
+
+| Extension | Server | Command |
+|-----------|--------|---------|
+| `.ts`, `.tsx`, `.js`, `.jsx` | typescript-language-server | `typescript-language-server --stdio` |
+| `.py` | pyright | `pyright-langserver --stdio` |
+| `.go` | gopls | `gopls serve` |
+
+File state is tracked per server — files are opened via `textDocument/didOpen` on first access, then updated via `textDocument/didChange` on subsequent calls.
+
+### Installed tooling
+
+Added to the Docker image (all three languages):
+
+**As root (before Claude Code install):**
+- Python 3 + `ruff` + `pyright` (via pip)
+- Go 1.23.6 runtime
+
+**As node (after Claude Code install):**
+- `typescript`, `typescript-language-server` (npm global)
+- `gopls` (go install)
+- `golangci-lint` (install script)
+- `@modelcontextprotocol/sdk`, `vscode-languageserver-protocol`, `vscode-jsonrpc` (npm global)
+
+### Proxy domains added
+
+`squid.conf` now allows PyPI (`.pypi.org`, `.pythonhosted.org`) and Go (`proxy.golang.org`, `sum.golang.org`, `storage.googleapis.com`) for runtime package installs.
+
+### Future IDE work
+- **playwright MCP**: Off-the-shelf `@playwright/mcp` for web preview, screenshots, DOM inspection
+- **Per-project config**: `.claude/ide.yml` to configure language servers, services, and allowed domains
+- **Background services**: Extend docker-compose for postgres, redis, etc.
 
 ---
 
