@@ -261,6 +261,68 @@ Automatic on exit (bash EXIT trap). The script also cleans up any previous sessi
 
 Just run `moat` again — the cleanup runs first, and the devcontainer CLI detects Dockerfile/compose changes and rebuilds automatically.
 
+## Per-Project Configuration
+
+Create a `.moat.yml` file in your workspace root to customize Moat for each project.
+
+### Background Services
+
+Add database and cache services that run alongside the devcontainer:
+
+```yaml
+services:
+  postgres:
+    image: postgres:15
+    env:
+      POSTGRES_PASSWORD: moat
+      POSTGRES_DB: dev
+  redis:
+    image: redis:7
+```
+
+Services run on the sandbox network and are accessible by name (e.g., `psql -h postgres -U postgres`).
+
+Known images get automatic healthchecks and resource limits:
+- `postgres:*` — `pg_isready`, 1 CPU / 1G RAM
+- `redis:*` — `redis-cli ping`, 0.5 CPU / 512M RAM
+- `mysql:*` / `mariadb:*` — `mysqladmin ping`, 1 CPU / 1G RAM
+- `mongo:*` — `mongosh ping`, 1 CPU / 1G RAM
+- Unknown images — no healthcheck, 1 CPU / 1G RAM
+
+### Environment Variables
+
+Inject environment variables into the devcontainer:
+
+```yaml
+env:
+  DATABASE_URL: postgres://postgres:moat@postgres:5432/dev
+  REDIS_URL: redis://redis:6379
+```
+
+### Extra Domains
+
+Add project-specific domains to the squid proxy whitelist:
+
+```yaml
+domains:
+  - .crates.io
+  - .docker.io
+```
+
+Use a leading dot to match the domain and all subdomains.
+
+### How It Works
+
+When you run `moat`, the launcher:
+1. Reads `<workspace>/.moat.yml`
+2. Generates `docker-compose.services.yml` with sidecar services on the sandbox network
+3. Generates `squid-runtime.conf` with base domains + project-specific domains
+4. Starts everything via `devcontainer up`
+
+If no `.moat.yml` exists, empty placeholders are generated (no-op — same behavior as before).
+
+See `moat.example.yml` in the repo for a fully documented example.
+
 ## Adding New Domains
 
 Edit `squid.conf` in the repo and add:

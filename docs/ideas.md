@@ -169,9 +169,9 @@ The container reads this on start and configures itself accordingly.
 1. ~~**Language servers via CLI**~~ — **DONE** (Phase 4b: `ide-tools.mjs` wraps `tsc --noEmit`, `pyright`, `golangci-lint`)
 2. ~~**Structured test output**~~ — **DONE** (Phase 4b: `run_tests` tool with JSON output from vitest/pytest/go test)
 3. ~~**File watcher + auto-lint**~~ — **DONE** (Phase 4a: `auto-diagnostics.sh` PostToolUse hook runs eslint/ruff/go vet)
-4. **Per-project config** — enables everything else to be project-specific
+4. ~~**Per-project config**~~ — **DONE** (Phase 5: `.moat.yml` in workspace root configures services, env, domains)
 5. **Web preview / screenshots** — essential for frontend work
-6. **Background services** — essential for full-stack work
+6. ~~**Background services**~~ — **DONE** (Phase 5: docker-compose sidecars on sandbox network with smart defaults)
 7. ~~**LSP MCP bridge**~~ — **DONE** (Phase 4c: `ide-lsp.mjs` manages persistent typescript-language-server/pyright/gopls)
 8. **Terminal multiplexer** — quality of life, not urgent
 9. **Debugging tools** — high value but hard to get right for LLMs

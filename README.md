@@ -134,13 +134,62 @@ Language servers (`typescript-language-server`, `pyright`, `gopls`) start lazily
 
 **AWS CLI** (read-only): Actions starting with `describe`, `list`, `get` are allowed. Actions starting with `create`, `delete`, `terminate`, `put`, `update`, `run` are blocked.
 
+## Per-project configuration
+
+Create a `.moat.yml` in your workspace root to configure background services, environment variables, and extra allowed domains per project:
+
+```yaml
+# .moat.yml
+services:
+  postgres:
+    image: postgres:15
+    env:
+      POSTGRES_PASSWORD: moat
+      POSTGRES_DB: dev
+  redis:
+    image: redis:7
+
+env:
+  DATABASE_URL: postgres://postgres:moat@postgres:5432/dev
+  REDIS_URL: redis://redis:6379
+
+domains:
+  - .crates.io
+  - .docker.io
+```
+
+All sections are optional. See `moat.example.yml` for a fully documented example.
+
+### Background services
+
+Services defined in `.moat.yml` run as Docker containers on the sandbox network alongside the devcontainer. They're accessible by service name (e.g., `psql -h postgres`).
+
+Smart defaults are applied for known images:
+
+| Image | Healthcheck | CPU | Memory |
+|-------|------------|-----|--------|
+| `postgres:*` | `pg_isready` | 1 | 1G |
+| `redis:*` | `redis-cli ping` | 0.5 | 512M |
+| `mysql:*` | `mysqladmin ping` | 1 | 1G |
+| `mariadb:*` | `mysqladmin ping` | 1 | 1G |
+| `mongo:*` | `mongosh ping` | 1 | 1G |
+| Other | none | 1 | 1G |
+
+The devcontainer waits for services with healthchecks to be healthy before starting.
+
+### Extra domains
+
+Domains listed under `domains:` are added to the squid proxy whitelist for that project. Use a leading dot to match the domain and all subdomains.
+
 ## Adding domains to the whitelist
 
-Edit `squid.conf` and add:
+For global domain changes, edit `squid.conf` and add:
 
 ```
 acl allowed_domains dstdomain .example.com
 ```
+
+For per-project domains, use the `domains:` section in `.moat.yml` instead.
 
 Then re-run `moat` (the container rebuilds automatically).
 
@@ -148,28 +197,32 @@ Then re-run `moat` (the container rebuilds automatically).
 
 ```
 moat/
-├── moat.sh                    # Launcher (starts proxy, container, Claude)
-├── install.sh                  # Unified installer (curl-pipeable, auto-detects context)
-├── tool-proxy.mjs              # Host-side proxy server with allowlists
-├── Dockerfile                  # Container image
-├── docker-compose.yml          # squid + devcontainer services
+├── moat.sh                       # Launcher (starts proxy, container, Claude)
+├── install.sh                    # Unified installer (curl-pipeable, auto-detects context)
+├── tool-proxy.mjs                # Host-side proxy server with allowlists
+├── generate-project-config.mjs   # Parse .moat.yml → compose + squid config
+├── Dockerfile                    # Container image
+├── docker-compose.yml            # squid + devcontainer services
+├── docker-compose.services.yml   # Per-project sidecar services (auto-generated)
 ├── docker-compose.extra-dirs.yml # Extra directory mounts (auto-generated)
-├── devcontainer.json           # devcontainer CLI config
-├── squid.conf                  # Domain whitelist
-├── test.sh                     # End-to-end test suite
-├── verify.sh                   # Post-start verification
-├── git-proxy-wrapper.sh        # Container-side git wrapper
-├── gh-proxy-wrapper.sh         # Container-side gh wrapper
-├── terraform-proxy-wrapper.sh  # Container-side terraform wrapper
-├── kubectl-proxy-wrapper.sh    # Container-side kubectl wrapper
-├── aws-proxy-wrapper.sh        # Container-side aws wrapper
-├── auto-diagnostics.sh         # PostToolUse hook for linting after edits
-├── ide-tools.mjs               # MCP server: diagnostics, tests, project info
-├── ide-lsp.mjs                 # MCP server: LSP code intelligence
+├── devcontainer.json             # devcontainer CLI config
+├── squid.conf                    # Domain whitelist (base)
+├── squid-runtime.conf            # Domain whitelist + project domains (auto-generated)
+├── moat.example.yml              # Example .moat.yml config
+├── test.sh                       # End-to-end test suite
+├── verify.sh                     # Post-start verification
+├── git-proxy-wrapper.sh          # Container-side git wrapper
+├── gh-proxy-wrapper.sh           # Container-side gh wrapper
+├── terraform-proxy-wrapper.sh    # Container-side terraform wrapper
+├── kubectl-proxy-wrapper.sh      # Container-side kubectl wrapper
+├── aws-proxy-wrapper.sh          # Container-side aws wrapper
+├── auto-diagnostics.sh           # PostToolUse hook for linting after edits
+├── ide-tools.mjs                 # MCP server: diagnostics, tests, project info
+├── ide-lsp.mjs                   # MCP server: LSP code intelligence
 └── docs/
-    ├── setup.md                # Detailed setup guide
-    ├── project-plan.md         # Roadmap and architecture decisions
-    ├── architecture.md         # Original squid proxy design
-    └── ideas.md                # Future IDE features
+    ├── setup.md                  # Detailed setup guide
+    ├── project-plan.md           # Roadmap and architecture decisions
+    ├── architecture.md           # Original squid proxy design
+    └── ideas.md                  # Future IDE features
 ```
 
