@@ -33,9 +33,9 @@ services:
     networks:
       sandbox:
     volumes:
-      - ${ANVIL_WORKSPACE:-~/Repos}:/workspace:cached
-      - anvil-bashhistory:/commandhistory
-      - anvil-config:/home/node/.claude
+      - ${MOAT_WORKSPACE:-~/Repos}:/workspace:cached
+      - moat-bashhistory:/commandhistory
+      - moat-config:/home/node/.claude
     depends_on:
       squid:
         condition: service_healthy
@@ -62,5 +62,5 @@ networks:
   extnet:
 
 volumes:
-  anvil-bashhistory:
-  anvil-config:
+  moat-bashhistory:
+  moat-config:

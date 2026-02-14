@@ -1,7 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 
-echo "=== Anvil Verification ==="
+echo "=== Moat Verification ==="
 
 # Verify proxy is configured
 if [ -z "${HTTPS_PROXY:-}" ]; then
@@ -19,14 +19,14 @@ echo "PASS: GitHub API accessible through proxy"
 
 # Verify blocked domain is denied by proxy
 if curl -s --proxy "$HTTPS_PROXY" --connect-timeout 5 -o /dev/null https://example.com 2>/dev/null; then
-    echo "ERROR: Anvil verification failed - was able to reach https://example.com"
+    echo "ERROR: Moat verification failed - was able to reach https://example.com"
     exit 1
 fi
 echo "PASS: Blocked domain (example.com) correctly denied"
 
 # Verify direct access (bypassing proxy) is blocked by network isolation
 if curl -s --noproxy '*' --connect-timeout 5 -o /dev/null https://example.com 2>/dev/null; then
-    echo "ERROR: Anvil verification failed - direct access (bypassing proxy) succeeded"
+    echo "ERROR: Moat verification failed - direct access (bypassing proxy) succeeded"
     exit 1
 fi
 echo "PASS: Direct external access blocked (network isolation working)"
@@ -57,4 +57,4 @@ echo "--- IaC tools ---"
 [ -f /usr/local/bin/kubectl.real ] && echo "PASS: kubectl installed ($(kubectl.real version --client --short 2>/dev/null || echo 'unknown'))" || echo "INFO: kubectl not installed"
 [ -d /usr/local/aws-cli ] && echo "PASS: aws-cli installed" || echo "INFO: aws-cli not installed"
 
-echo "=== All Anvil checks passed ==="
+echo "=== All Moat checks passed ==="
