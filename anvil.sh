@@ -30,7 +30,7 @@ if [ $# -gt 0 ] && [ -d "$1" ]; then
   WORKSPACE="$(cd "$1" && pwd)"
   shift
 else
-  WORKSPACE="$HOME/Repos"
+  WORKSPACE="$(pwd)"
 fi
 
 export ANVIL_WORKSPACE="$WORKSPACE"
