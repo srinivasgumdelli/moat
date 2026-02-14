@@ -29,6 +29,7 @@ services:
         CLAUDE_CODE_VERSION: ${CLAUDE_CODE_VERSION:-2.1.42}
         GIT_DELTA_VERSION: ${GIT_DELTA_VERSION:-0.18.2}
         BEADS_VERSION: ${BEADS_VERSION:-0.49.6}
+        GO_VERSION: ${GO_VERSION:-1.23.6}
     networks:
       sandbox:
     volumes:

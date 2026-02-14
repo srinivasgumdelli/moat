@@ -74,6 +74,18 @@ RUN ARCH=$(dpkg --print-architecture) && \
     tar xzf beads.tar.gz bd && mv bd /usr/local/bin/bd && \
     rm beads.tar.gz
 
+# Python 3 + linters
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 python3-pip python3-venv && \
+    pip3 install --break-system-packages ruff pyright && \
+    apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Go runtime + tools
+ARG GO_VERSION=1.23.6
+RUN ARCH=$(dpkg --print-architecture) && \
+    curl -sL "https://go.dev/dl/go${GO_VERSION}.linux_${ARCH}.tar.gz" | tar -C /usr/local -xz
+ENV PATH=$PATH:/usr/local/go/bin:/home/node/go/bin
+
 # Install Claude Code as non-root
 RUN mkdir -p /usr/local/share/npm-global && \
     chown -R node:node /usr/local/share/npm-global
@@ -83,17 +95,44 @@ ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
 ENV PATH=$PATH:/usr/local/share/npm-global/bin
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
+# Install TypeScript/Go language tools and MCP dependencies
+RUN npm install -g typescript typescript-language-server @modelcontextprotocol/sdk vscode-languageserver-protocol vscode-jsonrpc && \
+    GOPATH=/home/node/go go install golang.org/x/tools/gopls@latest && \
+    curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | \
+      sh -s -- -b /home/node/go/bin
+
 # Force git to use HTTPS instead of SSH (SSH can't traverse HTTP proxy)
 RUN git config --global url."https://github.com/".insteadOf "git@github.com:" && \
     git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
 
-# Configure Beads hooks and commands for Claude Code
+# Configure Beads hooks, commands, IDE tools, and MCP servers for Claude Code
 RUN bd setup claude && \
-    mkdir -p /home/node/.claude/commands && \
+    mkdir -p /home/node/.claude/commands /home/node/.claude/hooks /home/node/.claude/mcp && \
     curl -sL "https://raw.githubusercontent.com/steveyegge/beads/main/integrations/claude-code/commands/plan-to-beads.md" \
       -o /home/node/.claude/commands/plan-to-beads.md && \
-    jq '.permissions.allow = ((.permissions.allow // []) + ["Bash(bd:*)"])' \
-      /home/node/.claude/settings.json > /tmp/settings.json && \
+    jq '. + {
+      "permissions": {"allow": ((.permissions.allow // []) + ["Bash(bd:*)"])},
+      "hooks": {
+        "PostToolUse": [{
+          "matcher": "Edit|Write",
+          "hooks": [{
+            "type": "command",
+            "command": "/home/node/.claude/hooks/auto-diagnostics.sh",
+            "timeout": 30
+          }]
+        }]
+      },
+      "mcpServers": {
+        "ide-tools": {
+          "command": "node",
+          "args": ["/home/node/.claude/mcp/ide-tools.mjs"]
+        },
+        "ide-lsp": {
+          "command": "node",
+          "args": ["/home/node/.claude/mcp/ide-lsp.mjs"]
+        }
+      }
+    }' /home/node/.claude/settings.json > /tmp/settings.json && \
     mv /tmp/settings.json /home/node/.claude/settings.json
 
 # Install tool proxy wrapper scripts and static token
@@ -111,5 +150,11 @@ RUN chmod 644 /etc/tool-proxy-token && \
 # Copy verification script
 COPY verify.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/verify.sh
+
+# Copy IDE hook and MCP server files
+COPY --chown=node:node auto-diagnostics.sh /home/node/.claude/hooks/
+COPY --chown=node:node ide-tools.mjs /home/node/.claude/mcp/
+COPY --chown=node:node ide-lsp.mjs /home/node/.claude/mcp/
+RUN chmod +x /home/node/.claude/hooks/auto-diagnostics.sh
 
 USER node

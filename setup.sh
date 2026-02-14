@@ -107,7 +107,8 @@ mkdir -p "$HOME_CONFIG_DIR"
 for f in devcontainer.json docker-compose.yml docker-compose.extra-dirs.yml \
          Dockerfile squid.conf tool-proxy.mjs anvil.sh verify.sh \
          git-proxy-wrapper.sh gh-proxy-wrapper.sh \
-         terraform-proxy-wrapper.sh kubectl-proxy-wrapper.sh aws-proxy-wrapper.sh; do
+         terraform-proxy-wrapper.sh kubectl-proxy-wrapper.sh aws-proxy-wrapper.sh \
+         auto-diagnostics.sh ide-tools.mjs ide-lsp.mjs; do
   if [ -f "$REPO_DIR/$f" ]; then
     cp "$REPO_DIR/$f" "$HOME_CONFIG_DIR/$f"
   fi
