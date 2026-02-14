@@ -61,21 +61,18 @@ if [ "${1:-}" = "doctor" ]; then
   check_fail() { echo "  FAIL: $1"; FAILS=$((FAILS + 1)); }
   check_info() { echo "  INFO: $1"; }
 
-  # moat executable on PATH via ~/.local/bin
-  if [ -L "$HOME/.local/bin/moat" ]; then
-    target="$(readlink "$HOME/.local/bin/moat")"
-    if [ "$target" = "$REPO_DIR/moat.sh" ]; then
-      check_pass "Symlink ~/.local/bin/moat -> $REPO_DIR/moat.sh"
-    else
-      check_warn "Symlink ~/.local/bin/moat points to $target (expected $REPO_DIR/moat.sh)"
-    fi
-  else
-    check_fail "moat not found in ~/.local/bin (run setup.sh or install.sh)"
-  fi
-
-  # Legacy symlink (informational)
+  # Symlink exists and points to repo
   if [ -L "$HOME/.devcontainers/moat" ]; then
-    check_info "Legacy symlink ~/.devcontainers/moat still present"
+    target="$(readlink "$HOME/.devcontainers/moat")"
+    if [ "$target" = "$REPO_DIR" ]; then
+      check_pass "Symlink ~/.devcontainers/moat -> $REPO_DIR"
+    else
+      check_warn "Symlink ~/.devcontainers/moat points to $target (expected $REPO_DIR)"
+    fi
+  elif [ -d "$HOME/.devcontainers/moat" ]; then
+    check_warn "~/.devcontainers/moat is a directory (expected symlink to $REPO_DIR)"
+  else
+    check_fail "~/.devcontainers/moat not found (run setup.sh)"
   fi
 
   # Token in data dir

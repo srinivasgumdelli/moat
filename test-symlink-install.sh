@@ -1,5 +1,5 @@
 #!/bin/bash
-# Moat — unit tests for symlink install, plan subcommand, and alias migration
+# Moat — unit tests for devcontainer symlink, plan subcommand, and alias migration
 # Does not require Docker — tests shell logic only.
 set -euo pipefail
 
@@ -39,7 +39,7 @@ test_plan_args() {
   local args=("$@")
   if [ "${args[0]:-}" = "plan" ]; then
     args=("${args[@]:1}")
-    args=(--allowedTools "Read,Grep,Glob,Task,WebFetch,WebSearch" "${args[@]}")
+    args=(--allowedTools "Read,Grep,Glob,Task,WebFetch,WebSearch" ${args[@]+"${args[@]}"})
   fi
   printf '%s\n' "${args[@]}"
 }
@@ -78,34 +78,34 @@ else
 fi
 
 # -------------------------------------------------------
-# Test 2: setup.sh creates symlink in ~/.local/bin
+# Test 2: setup creates symlink at ~/.devcontainers/moat
 # -------------------------------------------------------
 echo ""
 echo "--- Test 2: symlink creation ---"
 
 setup_tmpdir
 
-mkdir -p "$HOME/.local/bin"
-ln -sf "$SCRIPT_DIR/moat.sh" "$HOME/.local/bin/moat"
+mkdir -p "$HOME/.devcontainers"
+ln -sf "$SCRIPT_DIR" "$HOME/.devcontainers/moat"
 
-if [ -L "$HOME/.local/bin/moat" ]; then
-  pass "Symlink created at ~/.local/bin/moat"
+if [ -L "$HOME/.devcontainers/moat" ]; then
+  pass "Symlink created at ~/.devcontainers/moat"
 else
   fail "Symlink not created"
 fi
 
-TARGET="$(readlink "$HOME/.local/bin/moat")"
-if [ "$TARGET" = "$SCRIPT_DIR/moat.sh" ]; then
-  pass "Symlink points to correct target"
+TARGET="$(readlink "$HOME/.devcontainers/moat")"
+if [ "$TARGET" = "$SCRIPT_DIR" ]; then
+  pass "Symlink points to correct target ($SCRIPT_DIR)"
 else
-  fail "Symlink points to $TARGET (expected $SCRIPT_DIR/moat.sh)"
+  fail "Symlink points to $TARGET (expected $SCRIPT_DIR)"
 fi
 
-# Symlink is executable
-if [ -x "$HOME/.local/bin/moat" ]; then
-  pass "Symlink target is executable"
+# moat.sh is executable through the symlink
+if [ -x "$HOME/.devcontainers/moat/moat.sh" ]; then
+  pass "moat.sh is executable through symlink"
 else
-  fail "Symlink target is not executable"
+  fail "moat.sh is not executable through symlink"
 fi
 
 # -------------------------------------------------------
@@ -159,50 +159,41 @@ else
 fi
 
 # -------------------------------------------------------
-# Test 4: PATH export added when missing
+# Test 4: moat.sh resolves REPO_DIR through symlinks
 # -------------------------------------------------------
 echo ""
-echo "--- Test 4: PATH export ---"
+echo "--- Test 4: REPO_DIR resolution through symlink ---"
 
-# Reset rc file
-cat > "$SHELL_RC" << 'EOF'
-export EDITOR=vim
-EOF
-
-# Simulate PATH logic from setup.sh
-if ! grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$SHELL_RC" 2>/dev/null; then
-  printf '\n# Moat — sandboxed Claude Code\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$SHELL_RC"
-fi
-
-if grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$SHELL_RC"; then
-  pass "PATH export added to rc file"
+# moat.sh uses resolve_path to find the real repo dir even when invoked via symlink
+# Verify the symlink target directory contains expected files
+if [ -f "$HOME/.devcontainers/moat/moat.sh" ]; then
+  pass "moat.sh reachable through ~/.devcontainers/moat symlink"
 else
-  fail "PATH export not added"
+  fail "moat.sh not reachable through symlink"
 fi
 
-# Run again — should be idempotent
-LINES_BEFORE=$(wc -l < "$SHELL_RC")
-if ! grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$SHELL_RC" 2>/dev/null; then
-  printf '\n# Moat — sandboxed Claude Code\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$SHELL_RC"
-fi
-LINES_AFTER=$(wc -l < "$SHELL_RC")
-
-if [ "$LINES_BEFORE" = "$LINES_AFTER" ]; then
-  pass "PATH export is idempotent (not duplicated)"
+if [ -f "$HOME/.devcontainers/moat/docker-compose.yml" ]; then
+  pass "docker-compose.yml reachable through symlink"
 else
-  fail "PATH export was duplicated on second run"
+  fail "docker-compose.yml not reachable through symlink"
+fi
+
+if [ -f "$HOME/.devcontainers/moat/tool-proxy.mjs" ]; then
+  pass "tool-proxy.mjs reachable through symlink"
+else
+  fail "tool-proxy.mjs not reachable through symlink"
 fi
 
 # -------------------------------------------------------
-# Test 5: doctor checks ~/.local/bin/moat
+# Test 5: doctor checks ~/.devcontainers/moat
 # -------------------------------------------------------
 echo ""
 echo "--- Test 5: doctor symlink check ---"
 
 # With correct symlink
-if [ -L "$HOME/.local/bin/moat" ]; then
-  target="$(readlink "$HOME/.local/bin/moat")"
-  if [ "$target" = "$SCRIPT_DIR/moat.sh" ]; then
+if [ -L "$HOME/.devcontainers/moat" ]; then
+  target="$(readlink "$HOME/.devcontainers/moat")"
+  if [ "$target" = "$SCRIPT_DIR" ]; then
     pass "Doctor would PASS: symlink correct"
   else
     fail "Doctor would fail: symlink target wrong"
@@ -212,20 +203,29 @@ else
 fi
 
 # With wrong symlink
-ln -sf "/wrong/path/moat.sh" "$HOME/.local/bin/moat"
-target="$(readlink "$HOME/.local/bin/moat")"
-if [ "$target" != "$SCRIPT_DIR/moat.sh" ]; then
+ln -sfn "/wrong/path" "$HOME/.devcontainers/moat"
+target="$(readlink "$HOME/.devcontainers/moat")"
+if [ "$target" != "$SCRIPT_DIR" ]; then
   pass "Doctor would WARN: symlink points to wrong target"
 else
   fail "Doctor missed wrong symlink target"
 fi
 
-# With no symlink
-rm "$HOME/.local/bin/moat"
-if [ ! -L "$HOME/.local/bin/moat" ]; then
-  pass "Doctor would FAIL: no symlink"
+# With no symlink (plain directory)
+rm "$HOME/.devcontainers/moat"
+mkdir -p "$HOME/.devcontainers/moat"
+if [ -d "$HOME/.devcontainers/moat" ] && [ ! -L "$HOME/.devcontainers/moat" ]; then
+  pass "Doctor would WARN: is directory not symlink"
 else
-  fail "Symlink should have been removed"
+  fail "Directory check failed"
+fi
+
+# With nothing
+rm -rf "$HOME/.devcontainers/moat"
+if [ ! -e "$HOME/.devcontainers/moat" ]; then
+  pass "Doctor would FAIL: not found"
+else
+  fail "Removal failed"
 fi
 
 # -------------------------------------------------------
@@ -234,11 +234,11 @@ fi
 echo ""
 echo "--- Test 6: symlink idempotency ---"
 
-ln -sf "$SCRIPT_DIR/moat.sh" "$HOME/.local/bin/moat"
-ln -sf "$SCRIPT_DIR/moat.sh" "$HOME/.local/bin/moat"
+ln -sfn "$SCRIPT_DIR" "$HOME/.devcontainers/moat"
+ln -sfn "$SCRIPT_DIR" "$HOME/.devcontainers/moat"
 
-TARGET="$(readlink "$HOME/.local/bin/moat")"
-if [ "$TARGET" = "$SCRIPT_DIR/moat.sh" ]; then
+TARGET="$(readlink "$HOME/.devcontainers/moat")"
+if [ "$TARGET" = "$SCRIPT_DIR" ]; then
   pass "Symlink creation is idempotent"
 else
   fail "Symlink broken after re-creation"
