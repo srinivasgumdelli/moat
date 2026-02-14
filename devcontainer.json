@@ -18,7 +18,7 @@
       }
     }
   },
-  "remoteUser": "codespace",
+  "remoteUser": "node",
   "remoteEnv": {
     "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}"
   },

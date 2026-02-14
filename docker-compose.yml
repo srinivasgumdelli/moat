@@ -21,7 +21,6 @@ services:
       start_period: 10s
 
   devcontainer:
-    platform: linux/amd64
     build:
       context: .
       dockerfile: Dockerfile
@@ -34,7 +33,7 @@ services:
     volumes:
       - ~/Repos:/workspace:cached
       - anvil-bashhistory:/commandhistory
-      - anvil-config:/home/codespace/.claude
+      - anvil-config:/home/node/.claude
     depends_on:
       squid:
         condition: service_healthy
@@ -46,7 +45,7 @@ services:
       - NO_PROXY=localhost,127.0.0.1
       - no_proxy=localhost,127.0.0.1
       - NODE_OPTIONS=--max-old-space-size=4096
-      - CLAUDE_CONFIG_DIR=/home/codespace/.claude
+      - CLAUDE_CONFIG_DIR=/home/node/.claude
       - DEVCONTAINER=true
     deploy:
       resources:
