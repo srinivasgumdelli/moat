@@ -1,51 +1,79 @@
-FROM --platform=linux/amd64 mcr.microsoft.com/devcontainers/universal:2
+FROM node:22
 
 ARG TZ
 ENV TZ="$TZ"
 
 ARG CLAUDE_CODE_VERSION=latest
 
-# Remove expired Yarn GPG key/repo from base image
-RUN rm -f /etc/apt/sources.list.d/yarn.list /usr/share/keyrings/yarn-keyring.gpg 2>/dev/null || true
+# Install basic development tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    less \
+    git \
+    procps \
+    sudo \
+    fzf \
+    zsh \
+    unzip \
+    gnupg2 \
+    jq \
+    nano \
+    vim \
+    wget \
+    curl \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+ARG USERNAME=node
 
 # Persist bash history
-ARG USERNAME=codespace
 RUN SNIPPET="export PROMPT_COMMAND='history -a' && export HISTFILE=/commandhistory/.bash_history" \
-  && mkdir -p /commandhistory \
-  && touch /commandhistory/.bash_history \
-  && chown -R $USERNAME /commandhistory \
-  && echo "$SNIPPET" >> "/home/$USERNAME/.bashrc" \
-  && echo "$SNIPPET" >> "/home/$USERNAME/.zshrc"
+    && mkdir -p /commandhistory \
+    && touch /commandhistory/.bash_history \
+    && chown -R $USERNAME /commandhistory \
+    && echo "$SNIPPET" >> "/home/$USERNAME/.bashrc" \
+    && echo "$SNIPPET" >> "/home/$USERNAME/.zshrc"
 
-# Create claude config directory
-RUN mkdir -p /home/codespace/.claude && \
-  chown -R codespace:codespace /home/codespace/.claude
+# Set DEVCONTAINER environment variable
+ENV DEVCONTAINER=true
+
+# Create workspace and config directories
+RUN mkdir -p /workspace /home/node/.claude && \
+    chown -R node:node /workspace /home/node/.claude
+
+WORKDIR /workspace
 
 # Install git-delta
 ARG GIT_DELTA_VERSION=0.18.2
 RUN ARCH=$(dpkg --print-architecture) && \
-  wget -q "https://github.com/dandavison/delta/releases/download/${GIT_DELTA_VERSION}/git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb" && \
-  dpkg -i "git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb" && \
-  rm "git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb"
+    wget -q "https://github.com/dandavison/delta/releases/download/${GIT_DELTA_VERSION}/git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb" && \
+    dpkg -i "git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb" && \
+    rm "git-delta_${GIT_DELTA_VERSION}_${ARCH}.deb"
 
-# Install IaC tools (as root for system-wide installation)
-# Terraform (direct binary — apt repo doesn't have packages for focal)
+# Install IaC tools
+# Terraform (direct binary download)
 ARG TERRAFORM_VERSION=1.10.5
-RUN curl -sL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_amd64.zip" -o terraform.zip && \
+RUN ARCH=$(dpkg --print-architecture) && \
+    curl -sL "https://releases.hashicorp.com/terraform/${TERRAFORM_VERSION}/terraform_${TERRAFORM_VERSION}_linux_${ARCH}.zip" -o terraform.zip && \
     unzip -q terraform.zip && mv terraform /usr/bin/terraform && \
     rm terraform.zip
 
 # kubectl
-RUN curl -sLO "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" && \
+RUN ARCH=$(dpkg --print-architecture) && \
+    curl -sLO "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/${ARCH}/kubectl" && \
     chmod +x kubectl && mv kubectl /usr/local/bin/kubectl.real
 
 # AWS CLI v2
-RUN curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o awscliv2.zip && \
+RUN ARCH=$(uname -m) && \
+    curl -s "https://awscli.amazonaws.com/awscli-exe-linux-${ARCH}.zip" -o awscliv2.zip && \
     unzip -q awscliv2.zip && ./aws/install --bin-dir /usr/local/bin/aws-real && \
     rm -rf awscliv2.zip aws/
 
 # Install Claude Code as non-root
-USER codespace
+RUN mkdir -p /usr/local/share/npm-global && \
+    chown -R node:node /usr/local/share/npm-global
+
+USER node
+ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
+ENV PATH=$PATH:/usr/local/share/npm-global/bin
 RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
 
 # Force git to use HTTPS instead of SSH (SSH can't traverse HTTP proxy)
@@ -68,4 +96,4 @@ RUN chmod 644 /etc/tool-proxy-token && \
 COPY verify.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/verify.sh
 
-USER codespace
+USER node
