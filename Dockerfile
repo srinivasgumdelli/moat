@@ -88,14 +88,16 @@ RUN ARCH=$(dpkg --print-architecture) && \
     rm /tmp/go.tar.gz
 ENV PATH=$PATH:/usr/local/go/bin:/home/node/go/bin
 
-# Install Claude Code as non-root
+# Install Claude Code via native installer
 RUN mkdir -p /usr/local/share/npm-global && \
     chown -R node:node /usr/local/share/npm-global
 
 USER node
+ENV PATH=/home/node/.local/bin:$PATH
 ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
 ENV PATH=$PATH:/usr/local/share/npm-global/bin
-RUN npm install -g @anthropic-ai/claude-code@${CLAUDE_CODE_VERSION}
+ENV DISABLE_AUTOUPDATER=1
+RUN curl -fsSL https://claude.ai/install.sh | bash -s ${CLAUDE_CODE_VERSION}
 
 # Install TypeScript/Go language tools and MCP dependencies
 RUN npm install -g typescript typescript-language-server @modelcontextprotocol/sdk vscode-languageserver-protocol vscode-jsonrpc && \
