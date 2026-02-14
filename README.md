@@ -32,19 +32,21 @@ Claude Code runs inside a Docker container with `--dangerously-skip-permissions`
 
 ## Quick start
 
-**Option A — curl installer** (if you already have Docker, Node, and git):
+**Option A — curl installer**:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/srinivasgumdelli/moat/main/install.sh | bash
 ```
 
-**Option B — full setup** (installs prerequisites via Homebrew):
+**Option B — clone first**:
 
 ```bash
 git clone git@github.com:srinivasgumdelli/moat.git
 cd moat
-./setup.sh
+./install.sh
 ```
+
+Both run the same installer. If Homebrew is available, missing prerequisites (Docker, Node, git) are installed automatically. Without Homebrew, the installer checks and tells you what to install.
 
 Then:
 
@@ -145,8 +147,8 @@ Then re-run `moat` (the container rebuilds automatically).
 ```
 moat/
 ├── moat.sh                    # Launcher (starts proxy, container, Claude)
-├── setup.sh                    # Full setup (installs prerequisites + configures)
-├── install.sh                  # Lightweight curl-friendly installer
+├── install.sh                  # Unified installer (curl-pipeable, auto-detects context)
+├── setup.sh                    # Backward-compat redirect to install.sh
 ├── tool-proxy.mjs              # Host-side proxy server with allowlists
 ├── Dockerfile                  # Container image
 ├── docker-compose.yml          # squid + devcontainer services

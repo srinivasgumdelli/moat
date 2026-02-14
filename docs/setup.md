@@ -53,7 +53,7 @@ Key properties:
 
 ## File Structure
 
-`~/.devcontainers/moat/` is a **symlink** pointing to the cloned repo (default: `~/.local/share/moat` for curl installs, or wherever you cloned for `setup.sh` installs). Runtime data lives separately in `~/.local/share/moat-data/`.
+`~/.devcontainers/moat/` is a **symlink** pointing to the cloned repo (default: `~/.local/share/moat` for curl installs, or wherever you cloned for local installs). Runtime data lives separately in `~/.local/share/moat-data/`.
 
 ```
 ~/.devcontainers/moat/ → <repo>        # Symlink to cloned repo
@@ -65,7 +65,7 @@ Key properties:
 ├── git-proxy-wrapper.sh   # Container-side git wrapper (proxies /workspace ops to host)
 ├── gh-proxy-wrapper.sh    # Container-side gh wrapper (proxies all ops to host)
 ├── moat.sh               # Host-side launcher script (starts proxy, container, Claude)
-├── install.sh             # Lightweight curl-friendly installer
+├── install.sh             # Unified installer (curl-pipeable, auto-detects context)
 ├── .proxy-token           # Copied from DATA_DIR before builds (in .gitignore)
 └── verify.sh              # Post-start verification script
 
