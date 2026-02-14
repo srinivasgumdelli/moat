@@ -11,61 +11,84 @@ echo "Anvil Setup"
 echo "=============================="
 echo ""
 
-# --- 1. Check prerequisites ---
-echo "--- Checking prerequisites ---"
+# --- Helper: install via Homebrew if missing ---
+brew_install() {
+  local cmd=$1 pkg=$2
+  if command -v "$cmd" &>/dev/null; then
+    echo "PASS: $cmd already installed"
+    return 0
+  fi
+  echo "INSTALLING: $cmd via brew..."
+  brew install "$pkg"
+  echo "PASS: $cmd installed"
+}
 
-MISSING=0
+# --- 1. Install prerequisites ---
+echo "--- Installing prerequisites ---"
 
+# Homebrew
+if ! command -v brew &>/dev/null; then
+  echo "INSTALLING: Homebrew..."
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  # Add brew to PATH for the rest of this script
+  if [ -f /opt/homebrew/bin/brew ]; then
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+  elif [ -f /usr/local/bin/brew ]; then
+    eval "$(/usr/local/bin/brew shellenv)"
+  fi
+  echo "PASS: Homebrew installed"
+else
+  echo "PASS: Homebrew already installed"
+fi
+
+# Docker Desktop
 if ! command -v docker &>/dev/null; then
-  echo "FAIL: Docker not found. Install Docker Desktop: https://docker.com/products/docker-desktop"
-  MISSING=1
-elif ! docker info &>/dev/null 2>&1; then
-  echo "FAIL: Docker is not running. Start Docker Desktop first."
-  MISSING=1
-else
-  echo "PASS: Docker $(docker --version | cut -d' ' -f3 | tr -d ',')"
+  echo "INSTALLING: Docker Desktop via brew..."
+  brew install --cask docker
+  echo "PASS: Docker Desktop installed"
+  echo ""
+  echo ">>> Please launch Docker Desktop from Applications and wait for it to start."
+  echo ">>> Press Enter when Docker is running..."
+  read -r
 fi
-
-if ! command -v node &>/dev/null; then
-  echo "FAIL: Node.js not found. Install: brew install node"
-  MISSING=1
-else
-  echo "PASS: Node.js $(node --version)"
+# Wait for Docker daemon
+if ! docker info &>/dev/null 2>&1; then
+  echo "Waiting for Docker daemon..."
+  for i in $(seq 1 30); do
+    if docker info &>/dev/null 2>&1; then
+      break
+    fi
+    if [ "$i" -eq 30 ]; then
+      echo "FAIL: Docker daemon not responding after 30s. Launch Docker Desktop and re-run."
+      exit 1
+    fi
+    sleep 1
+  done
 fi
+echo "PASS: Docker $(docker --version | cut -d' ' -f3 | tr -d ',')"
 
+# Node.js
+brew_install node node
+
+# devcontainer CLI
 if ! command -v devcontainer &>/dev/null; then
-  echo "INFO: devcontainer CLI not found, installing..."
+  echo "INSTALLING: devcontainer CLI..."
   npm install -g @devcontainers/cli
   echo "PASS: devcontainer CLI installed"
 else
-  echo "PASS: devcontainer CLI $(devcontainer --version 2>/dev/null || echo 'installed')"
+  echo "PASS: devcontainer CLI already installed"
 fi
 
-if command -v gh &>/dev/null; then
-  echo "PASS: GitHub CLI (gh) installed"
-  if gh auth status &>/dev/null 2>&1; then
-    echo "PASS: gh authenticated"
-  else
-    echo "WARN: gh not authenticated. Run: gh auth login"
-  fi
-else
-  echo "WARN: GitHub CLI (gh) not found. Git/gh proxy won't work. Install: brew install gh"
+# GitHub CLI
+brew_install gh gh
+if ! gh auth status &>/dev/null 2>&1; then
+  echo "WARN: gh not authenticated. Run: gh auth login"
 fi
 
-# Optional: check IaC tools on host
-for tool in terraform kubectl aws; do
-  if command -v "$tool" &>/dev/null; then
-    echo "PASS: $tool available on host (for proxy)"
-  else
-    echo "INFO: $tool not on host — proxy for $tool will fail (install if needed)"
-  fi
-done
-
-if [ $MISSING -ne 0 ]; then
-  echo ""
-  echo "Required tools missing. Fix the FAIL items above and re-run."
-  exit 1
-fi
+# IaC tools
+brew_install terraform hashicorp/tap/terraform
+brew_install kubectl kubectl
+brew_install aws awscli
 
 echo ""
 
@@ -165,8 +188,8 @@ echo "Setup complete!"
 echo "=============================="
 echo ""
 echo "Usage:"
-echo "  anvil           # Full sandbox with all tools"
-echo "  anvil-plan      # Plan mode (read-only tools only)"
+echo "  anvil           # Full access"
+echo "  anvil-plan      # Read-only tools only"
 echo ""
 echo "You may need to restart your shell for aliases to take effect:"
 echo "  source $SHELL_RC"
