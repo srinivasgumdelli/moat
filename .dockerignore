@@ -1,0 +1,15 @@
+# Only include files needed for the Docker build context:
+# Dockerfile, wrapper scripts, verify.sh, tool-proxy.mjs, .proxy-token
+
+.git/
+docs/
+README.md
+CLAUDE.md
+TODO.md
+setup.sh
+anvil.sh
+devcontainer.json
+squid.conf
+.gitignore
+.dockerignore
+.tool-proxy.env
