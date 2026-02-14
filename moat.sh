@@ -221,9 +221,11 @@ fi
 
 # Build claude --add-dir flags for extra directories
 CLAUDE_ADD_DIRS=()
-for dir in "${EXTRA_DIRS[@]}"; do
-  CLAUDE_ADD_DIRS+=(--add-dir "/extra/$(basename "$dir")")
-done
+if [ ${#EXTRA_DIRS[@]} -gt 0 ]; then
+  for dir in "${EXTRA_DIRS[@]}"; do
+    CLAUDE_ADD_DIRS+=(--add-dir "/extra/$(basename "$dir")")
+  done
+fi
 
 cleanup() {
   echo "[moat] Cleaning up..."
