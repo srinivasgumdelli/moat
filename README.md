@@ -43,9 +43,14 @@ The setup script checks prerequisites, installs config to `~/.devcontainers/anvi
 Then:
 
 ```bash
-anvil              # full access
-anvil-plan         # read-only tools only (no Write, Edit, Bash)
+anvil                                        # full access (workspace = cwd)
+anvil ~/Projects/myapp                       # target a specific directory
+anvil --add-dir ~/Projects/shared-lib        # mount extra directories
+anvil ~/Projects/myapp --add-dir ~/lib-a --add-dir ~/lib-b
+anvil-plan                                   # read-only tools only (no Write, Edit, Bash)
 ```
+
+Extra directories are mounted at `/extra/<dirname>` inside the container and automatically registered with Claude Code via `--add-dir`.
 
 ## Prerequisites
 
@@ -101,6 +106,7 @@ anvil/
 ├── tool-proxy.mjs              # Host-side proxy server with allowlists
 ├── Dockerfile                  # Container image
 ├── docker-compose.yml          # squid + devcontainer services
+├── docker-compose.extra-dirs.yml # Extra directory mounts (auto-generated)
 ├── devcontainer.json           # devcontainer CLI config
 ├── squid.conf                  # Domain whitelist
 ├── verify.sh                   # Post-start verification
