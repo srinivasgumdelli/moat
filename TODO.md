@@ -1,8 +1,15 @@
 # Next Steps
 
-## Validate Phase 4 IDE features
+## Validate install/update flow
 
-Rebuild image and verify end-to-end:
+- [ ] Fresh `install.sh` on machine with Docker+Node → clones repo, creates symlink, builds image, launches
+- [ ] Fresh `./setup.sh` from repo clone → same result (with prereq installs)
+- [ ] `anvil update` → pulls latest, rebuilds image
+- [ ] `anvil` → tool proxy finds token via `ANVIL_TOKEN_FILE`, Docker build has token, session works
+- [ ] Old user with `~/.devcontainers/anvil/` directory → migrated to symlink, token preserved in `~/.local/share/anvil-data/`
+- [ ] `git status` in repo after all operations → clean (no token file committed)
+
+## Validate Phase 4 IDE features
 
 - [ ] `docker compose build` succeeds (Python, Go, linters, language servers all install)
 - [ ] Edit a `.py` file with a lint error → ruff diagnostics appear in context

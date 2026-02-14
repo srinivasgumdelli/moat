@@ -2,7 +2,7 @@
 
 ## Context
 
-The devcontainer at `/Users/sri/.devcontainers/anvil/` uses iptables rules to restrict outbound network access. This fails on Apple Silicon because iptables (legacy and nft) doesn't work under Rosetta x86_64 emulation. We're replacing it with Docker network isolation + a squid forward proxy sidecar.
+The devcontainer at `~/.devcontainers/anvil/` (symlinked to the repo checkout) uses iptables rules to restrict outbound network access. This fails on Apple Silicon because iptables (legacy and nft) doesn't work under Rosetta x86_64 emulation. We're replacing it with Docker network isolation + a squid forward proxy sidecar.
 
 ## Architecture
 
@@ -32,7 +32,7 @@ The devcontainer at `/Users/sri/.devcontainers/anvil/` uses iptables rules to re
 | Modify | `devcontainer.json` | Switch from `build` to `dockerComposeFile` |
 | Delete | `init-firewall.sh` | Replaced by squid config |
 
-All files in `/Users/sri/.devcontainers/anvil/`.
+All files in the repo checkout (symlinked from `~/.devcontainers/anvil/`).
 
 ## Step 1: Create `docker-compose.yml`
 
