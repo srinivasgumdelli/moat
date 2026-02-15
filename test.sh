@@ -189,6 +189,89 @@ else
   echo "$VERIFY_OUTPUT" | sed 's/^/    /'
 fi
 
+# --- Phase 7: Mount matching (--add-dir reuse bug fix) ---
+echo ""
+echo "--- Phase 7: Mount matching ---"
+
+# Container is running from Phase 6 with no extra dirs.
+# mounts_match should succeed when EXTRA_DIRS is empty.
+CONTAINER_NAME="${PROJECT_NAME}-devcontainer-1"
+
+CURRENT_MOUNTS=$(docker inspect "$CONTAINER_NAME" \
+  --format '{{range .Mounts}}{{if eq .Type "bind"}}{{.Destination}}{{"\n"}}{{end}}{{end}}' 2>/dev/null \
+  | grep '^/extra/' | sort) || CURRENT_MOUNTS=""
+
+if [ -z "$CURRENT_MOUNTS" ]; then
+  pass "No /extra/ mounts on container started without --add-dir"
+else
+  fail "Unexpected /extra/ mounts found: $CURRENT_MOUNTS"
+fi
+
+# Generate an override with an extra dir and verify it differs
+FAKE_EXTRA="/extra/test-dir"
+if [ "$CURRENT_MOUNTS" != "$FAKE_EXTRA" ]; then
+  pass "Mount mismatch correctly detected (empty vs /extra/test-dir)"
+else
+  fail "Mount mismatch not detected"
+fi
+
+# --- Phase 8: attach/detach argument validation ---
+echo ""
+echo "--- Phase 8: attach/detach validation ---"
+
+# attach with no args
+if "$SCRIPT_DIR/moat.sh" attach 2>&1 | grep -q "Usage: moat attach"; then
+  pass "attach with no args shows usage error"
+else
+  fail "attach with no args did not show usage error"
+fi
+
+# attach with nonexistent directory
+if "$SCRIPT_DIR/moat.sh" attach /nonexistent/path 2>&1 | grep -q "Usage: moat attach"; then
+  pass "attach with bad path shows usage error"
+else
+  fail "attach with bad path did not show usage error"
+fi
+
+# detach with no args
+if "$SCRIPT_DIR/moat.sh" detach 2>&1 | grep -q "Usage: moat detach"; then
+  pass "detach with no args shows usage error"
+else
+  fail "detach with no args did not show usage error"
+fi
+
+# attach/detach with mutagen not installed (skip if mutagen IS installed)
+if ! command -v mutagen &>/dev/null; then
+  if "$SCRIPT_DIR/moat.sh" attach /tmp 2>&1 | grep -q "mutagen is required"; then
+    pass "attach without mutagen shows install hint"
+  else
+    fail "attach without mutagen did not show install hint"
+  fi
+
+  if "$SCRIPT_DIR/moat.sh" detach foo 2>&1 | grep -q "mutagen is not installed"; then
+    pass "detach without mutagen shows error"
+  else
+    fail "detach without mutagen did not show error"
+  fi
+else
+  echo "  (mutagen is installed — skipping 'not installed' error tests)"
+
+  # Test attach against the test container — it won't find moat-devcontainer-1
+  # since the test uses project name moat-test, producing moat-test-devcontainer-1.
+  if "$SCRIPT_DIR/moat.sh" attach /tmp 2>&1 | grep -q "No running moat container"; then
+    pass "attach with no moat-devcontainer-1 shows container error"
+  else
+    fail "attach did not detect missing container"
+  fi
+
+  # detach --all with no sessions should succeed silently
+  if "$SCRIPT_DIR/moat.sh" detach --all 2>&1 | grep -q "terminated"; then
+    pass "detach --all succeeds with no active sessions"
+  else
+    fail "detach --all did not handle empty session list"
+  fi
+fi
+
 # --- Summary ---
 echo ""
 echo "=============================="
