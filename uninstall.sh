@@ -77,7 +77,7 @@ fi
 
 if [ -f "$REPO_DIR/docker-compose.yml" ] && \
    docker compose --project-name moat "${COMPOSE_FILES[@]}" \
-    ps --status running --format '{{.Name}}' 2>/dev/null | grep -q .; then
+    ps --status running 2>/dev/null | grep -q .; then
   warn_msg "Running containers detected"
   if confirm "Stop containers?"; then
     docker compose --project-name moat "${COMPOSE_FILES[@]}" down 2>/dev/null || true

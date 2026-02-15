@@ -463,7 +463,7 @@ container_running() {
   docker compose --project-name moat \
     -f "$REPO_DIR/docker-compose.yml" \
     -f "$SERVICES_FILE" \
-    -f "$OVERRIDE_FILE" ps --status running --format '{{.Name}}' 2>/dev/null \
+    -f "$OVERRIDE_FILE" ps --status running 2>/dev/null \
     | grep -q devcontainer || return 1
 
   # Verify the running container was started for the same workspace
@@ -534,7 +534,7 @@ else
   if docker compose --project-name moat \
     -f "$REPO_DIR/docker-compose.yml" \
     -f "$SERVICES_FILE" \
-    -f "$OVERRIDE_FILE" ps --status running --format '{{.Name}}' 2>/dev/null \
+    -f "$OVERRIDE_FILE" ps --status running 2>/dev/null \
     | grep -q devcontainer; then
     log "Workspace changed — tearing down previous container..."
     docker compose --project-name moat \
