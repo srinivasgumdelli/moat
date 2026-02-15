@@ -1,7 +1,7 @@
 #!/bin/bash
 # Moat — sandboxed Claude Code launcher
 # Usage: moat.sh [workspace_path] [--add-dir <path>...] [claude args...]
-# Subcommands: doctor | update [--version X.Y.Z] | down | plan | uninstall
+# Subcommands: doctor | update [--version X.Y.Z] | down | attach <dir> | detach <dir|--all> | plan | uninstall
 
 set -euo pipefail
 
@@ -160,6 +160,17 @@ if [ "${1:-}" = "doctor" ]; then
     check_fail "ANTHROPIC_API_KEY not set"
   fi
 
+  # Mutagen (optional, for attach/detach)
+  if command -v mutagen &>/dev/null; then
+    check_pass "mutagen installed (enables 'moat attach')"
+    SYNC_COUNT=$(mutagen sync list --label-selector moat=true 2>/dev/null | grep -c "Name:" || true)
+    if [ "$SYNC_COUNT" -gt 0 ]; then
+      check_info "$SYNC_COUNT active moat sync session(s)"
+    fi
+  else
+    check_info "mutagen not installed (optional, for 'moat attach' live-sync)"
+  fi
+
   echo ""
   if [ "$FAILS" -gt 0 ]; then
     echo -e "  ${RED}${BOLD}$FAILS fail(s)${RESET}, $WARNS warn(s)"
@@ -176,6 +187,9 @@ fi
 # Handle subcommands
 if [ "${1:-}" = "down" ]; then
   log "Tearing down containers..."
+  if command -v mutagen &>/dev/null; then
+    mutagen sync terminate --label-selector moat=true 2>/dev/null || true
+  fi
   docker compose --project-name moat \
     -f "$REPO_DIR/docker-compose.yml" \
     -f "$SERVICES_FILE" \
@@ -187,6 +201,79 @@ if [ "${1:-}" = "down" ]; then
   fi
   lsof -ti :9876 2>/dev/null | xargs kill 2>/dev/null || true
   log "Done."
+  exit 0
+fi
+
+if [ "${1:-}" = "attach" ]; then
+  shift
+  if ! command -v mutagen &>/dev/null; then
+    err "mutagen is required for live-sync. Install it with:"
+    err "  brew install mutagen-io/mutagen/mutagen"
+    exit 1
+  fi
+  if [ -z "${1:-}" ] || [ ! -d "${1:-}" ]; then
+    err "Usage: moat attach <directory>"
+    exit 1
+  fi
+  ATTACH_DIR="$(cd "$1" && pwd)"
+  ATTACH_NAME="$(basename "$ATTACH_DIR")"
+
+  # Check container is running
+  if ! docker inspect moat-devcontainer-1 --format '{{.State.Running}}' 2>/dev/null | grep -q true; then
+    err "No running moat container. Start a session first with 'moat'."
+    exit 1
+  fi
+
+  # Check for existing session with this basename
+  if mutagen sync list --label-selector "moat=true,moat-dir=$ATTACH_NAME" 2>/dev/null | grep -q "Name:"; then
+    err "A sync session for '$ATTACH_NAME' already exists. Detach it first with:"
+    err "  moat detach $ATTACH_NAME"
+    exit 1
+  fi
+
+  # Create target directory inside container
+  docker exec moat-devcontainer-1 mkdir -p "/extra/$ATTACH_NAME"
+  docker exec moat-devcontainer-1 chown node:node "/extra/$ATTACH_NAME"
+
+  # Create mutagen sync session
+  mutagen sync create \
+    --name "moat-$ATTACH_NAME" \
+    --label "moat=true" \
+    --label "moat-dir=$ATTACH_NAME" \
+    --sync-mode two-way-resolved \
+    --default-owner-beta node \
+    --default-group-beta node \
+    --ignore-vcs \
+    "$ATTACH_DIR" \
+    "docker://moat-devcontainer-1/extra/$ATTACH_NAME"
+
+  log "Attached ${BOLD}$ATTACH_DIR${RESET} -> ${BOLD}/extra/$ATTACH_NAME${RESET}"
+  log "Tell Claude about it: ${DIM}\"I have an additional directory at /extra/$ATTACH_NAME\"${RESET}"
+  exit 0
+fi
+
+if [ "${1:-}" = "detach" ]; then
+  shift
+  if ! command -v mutagen &>/dev/null; then
+    err "mutagen is not installed."
+    exit 1
+  fi
+  if [ -z "${1:-}" ]; then
+    err "Usage: moat detach <dir|--all>"
+    exit 1
+  fi
+
+  if [ "$1" = "--all" ]; then
+    mutagen sync terminate --label-selector moat=true 2>/dev/null || true
+    log "All moat sync sessions terminated."
+  else
+    DETACH_NAME="$(basename "$1")"
+    if ! mutagen sync terminate --label-selector "moat=true,moat-dir=$DETACH_NAME" 2>/dev/null; then
+      err "No sync session found for '$DETACH_NAME'."
+      exit 1
+    fi
+    log "Detached $DETACH_NAME"
+  fi
   exit 0
 fi
 
@@ -305,6 +392,9 @@ fi
 
 cleanup_proxy() {
   log "Stopping tool proxy..."
+  if command -v mutagen &>/dev/null; then
+    mutagen sync terminate --label-selector moat=true 2>/dev/null || true
+  fi
   if [ -f "$PROXY_PIDFILE" ]; then
     kill "$(cat "$PROXY_PIDFILE")" 2>/dev/null || true
     rm -f "$PROXY_PIDFILE"

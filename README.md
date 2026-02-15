@@ -56,6 +56,8 @@ moat ~/Projects/myapp                       # target a specific directory
 moat --add-dir ~/Projects/shared-lib        # mount extra directories
 moat ~/Projects/myapp --add-dir ~/lib-a --add-dir ~/lib-b
 moat plan                                   # read-only tools only (no Write, Edit, Bash)
+moat attach ~/Projects/shared-lib           # live-sync a dir into a running session
+moat detach shared-lib                      # stop syncing
 ```
 
 **Diagnose** setup issues:
@@ -84,6 +86,7 @@ See [docs/usage.md](docs/usage.md) for the full usage guide.
 | terraform | Optional | `brew install terraform` (on host, for proxy) |
 | kubectl | Optional | `brew install kubectl` (on host, for proxy) |
 | aws CLI | Optional | `brew install awscli` (on host, for proxy) |
+| mutagen | Optional | `brew install mutagen-io/mutagen/mutagen` (for `moat attach` live-sync) |
 
 ## Security layers
 

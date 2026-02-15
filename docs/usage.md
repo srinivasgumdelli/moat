@@ -46,6 +46,43 @@ moat plan                         # read-only, workspace = cwd
 moat plan ~/Projects/myapp        # read-only on specific dir
 ```
 
+### `moat attach <dir>` — Live-sync a directory into a running session
+
+```bash
+moat attach <directory>
+```
+
+Attaches an additional directory to a running moat session using [Mutagen](https://mutagen.io/) two-way file sync. The directory appears at `/extra/<dirname>` inside the container.
+
+Unlike `--add-dir` (which requires a container restart), `moat attach` works while Claude is running. Files sync both ways in real-time.
+
+```bash
+moat attach ~/Projects/shared-lib     # syncs to /extra/shared-lib
+moat attach ~/data/fixtures           # syncs to /extra/fixtures
+```
+
+After attaching, tell Claude about the new directory:
+
+> "I have an additional directory at /extra/shared-lib"
+
+**Requires**: `mutagen` (`brew install mutagen-io/mutagen/mutagen`)
+
+### `moat detach` — Remove a live-synced directory
+
+```bash
+moat detach <dir|--all>
+```
+
+Stops syncing a previously attached directory. Accepts a path or just the basename.
+
+```bash
+moat detach shared-lib                # stop syncing shared-lib
+moat detach ~/Projects/shared-lib     # same thing (basename is used)
+moat detach --all                     # stop all moat sync sessions
+```
+
+Sync sessions are also cleaned up automatically when the moat session exits.
+
 ### `moat update` — Update and rebuild
 
 ```bash
@@ -79,6 +116,7 @@ Runs diagnostic checks and reports PASS/FAIL/WARN for each:
 | Docker image built | WARN if not |
 | Tool proxy on :9876 | INFO (only during sessions) |
 | `ANTHROPIC_API_KEY` set | FAIL if not |
+| `mutagen` installed | INFO (optional, for attach/detach) |
 
 Exits with code 1 if any FAILs, 0 otherwise.
 
@@ -93,7 +131,7 @@ When you run `moat`:
 5. Claude Code launches with `--dangerously-skip-permissions`
 6. On exit (or Ctrl-C), the EXIT trap tears everything down
 
-Sessions are **ephemeral** — containers are destroyed after each use. Bash history and Claude config persist across sessions via Docker volumes.
+Containers are **reused** across sessions when the workspace and extra directories haven't changed. On exit, only the tool proxy is stopped — containers keep running for fast re-launch. Bash history and Claude config persist across sessions via Docker volumes. Any Mutagen sync sessions (from `moat attach`) are terminated on exit.
 
 ## What works inside the container
 
