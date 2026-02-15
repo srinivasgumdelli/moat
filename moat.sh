@@ -330,6 +330,23 @@ container_running() {
   [ "$current_workspace" = "$WORKSPACE" ]
 }
 
+mounts_match() {
+  local current_mounts
+  current_mounts=$(docker inspect moat-devcontainer-1 \
+    --format '{{range .Mounts}}{{if eq .Type "bind"}}{{.Destination}}{{"\n"}}{{end}}{{end}}' 2>/dev/null \
+    | grep '^/extra/' | sort) || return 1
+
+  local expected_mounts=""
+  if [ ${#EXTRA_DIRS[@]} -gt 0 ]; then
+    for dir in "${EXTRA_DIRS[@]}"; do
+      expected_mounts+="/extra/$(basename "$dir")"$'\n'
+    done
+    expected_mounts=$(echo "$expected_mounts" | sed '/^$/d' | sort)
+  fi
+
+  [ "$current_mounts" = "$expected_mounts" ]
+}
+
 # Start or reuse tool proxy
 if curl -sf http://127.0.0.1:9876/health &>/dev/null; then
   log "Tool proxy already running"
@@ -356,7 +373,19 @@ ensure_token_in_repo
 
 # Start or reuse container
 if container_running; then
-  log "Reusing running container"
+  if mounts_match; then
+    log "Reusing running container"
+  else
+    log "Extra directories changed — recreating container..."
+    docker compose --project-name moat \
+      -f "$REPO_DIR/docker-compose.yml" \
+      -f "$SERVICES_FILE" \
+      -f "$OVERRIDE_FILE" down 2>/dev/null || true
+    log "Starting devcontainer..."
+    devcontainer up \
+      --workspace-folder "$WORKSPACE" \
+      --config "$REPO_DIR/devcontainer.json"
+  fi
 else
   # Tear down any container running for a different workspace
   if docker compose --project-name moat \
