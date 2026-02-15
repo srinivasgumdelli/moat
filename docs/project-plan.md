@@ -194,7 +194,7 @@ moat update
 1. Check/install prerequisites
    ├── Homebrew, Docker Desktop, Node.js (via brew)
    ├── devcontainer CLI (npm install -g)
-   ├── gh CLI, terraform, kubectl, aws (via brew)
+   ├── gh CLI, terraform, kubectl, aws, mutagen (via brew)
    └── Warn if ANTHROPIC_API_KEY not set
 
 2. Link configuration
@@ -243,6 +243,7 @@ Lightweight version — skips Homebrew/prerequisite installs:
 | terraform | Optional (for IaC proxy) | Installed in container; host needs it for proxy |
 | kubectl | Optional (for k8s proxy) | Installed in container; host needs it for proxy |
 | aws CLI | Optional (for AWS proxy) | Installed in container; host needs it for proxy |
+| mutagen | Optional (for `moat attach` live-sync) | `brew install mutagen-io/mutagen/mutagen` |
 
 ---
 

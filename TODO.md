@@ -23,12 +23,22 @@
 - [ ] `lsp_definition` on an import → source file and line returned
 - [ ] `lsp_references` on a function → call sites listed
 
+## Validate attach/detach
+
+- [ ] `moat attach ~/some-dir` with mutagen installed → live-sync to `/extra/<dir>`, no restart
+- [ ] `moat attach ~/some-dir` without mutagen → confirmation prompt, restart fallback, resume hint
+- [ ] `moat detach some-dir` → terminates sync session
+- [ ] `moat detach --all` → terminates all sync sessions
+- [ ] `moat down` → cleans up mutagen sessions before tearing down containers
+- [ ] Exit trap (Ctrl-C / Claude exit) → cleans up mutagen sessions
+- [ ] `moat doctor` with mutagen installed → shows mutagen status and active session count
+- [ ] Re-run `moat` with different `--add-dir` flags → recreates container (not silently reused)
+- [ ] Re-run `moat` with same `--add-dir` flags → reuses container
+
 ## Future work
 
-1. **Per-project config** — `.claude/ide.yml` to configure language servers, services, and allowed domains per project.
-2. **Web preview / screenshots** — Playwright MCP for frontend work.
-3. **Background services** — Extend docker-compose for postgres, redis, etc.
-4. **Debugging tools** — Print debugging on steroids, snapshot debugging, etc.
-5. **Project indexing** — ctags, dependency graphs, architecture summaries for large codebases.
+1. **Web preview / screenshots** — Playwright MCP for frontend work.
+2. **Debugging tools** — Print debugging on steroids, snapshot debugging, etc.
+3. **Project indexing** — ctags, dependency graphs, architecture summaries for large codebases.
 
 See `docs/ideas.md` for full details.

@@ -173,7 +173,8 @@ The container reads this on start and configures itself accordingly.
 5. **Web preview / screenshots** — essential for frontend work
 6. ~~**Background services**~~ — **DONE** (Phase 5: docker-compose sidecars on sandbox network with smart defaults)
 7. ~~**LSP MCP bridge**~~ — **DONE** (Phase 4c: `ide-lsp.mjs` manages persistent typescript-language-server/pyright/gopls)
-8. **Terminal multiplexer** — quality of life, not urgent
+8. ~~**Live directory attach**~~ — **DONE** (`moat attach`/`detach` via Mutagen live-sync, with restart fallback when mutagen unavailable)
+9. **Terminal multiplexer** — quality of life, not urgent
 9. **Debugging tools** — high value but hard to get right for LLMs
 10. **Indexing / embeddings** — useful for large codebases, can defer
 

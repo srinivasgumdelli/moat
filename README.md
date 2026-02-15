@@ -102,7 +102,7 @@ See [docs/usage.md](docs/usage.md) for the full usage guide.
 | Proxy binds 127.0.0.1 | Network-level proxy access |
 | Non-root user | Privilege escalation |
 | Resource limits | CPU/memory exhaustion |
-| Ephemeral containers | Persistent compromise |
+| Container rebuild on change | Stale state from previous workspace |
 
 ## IDE features
 
@@ -200,7 +200,7 @@ Then re-run `moat` (the container rebuilds automatically).
 
 ```
 moat/
-├── moat.sh                       # Launcher (starts proxy, container, Claude)
+├── moat.sh                       # Launcher (doctor, update, down, attach, detach, plan)
 ├── install.sh                    # Unified installer (curl-pipeable, auto-detects context)
 ├── tool-proxy.mjs                # Host-side proxy server with allowlists
 ├── generate-project-config.mjs   # Parse .moat.yml → compose + squid config

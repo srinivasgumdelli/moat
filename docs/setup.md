@@ -49,7 +49,7 @@ Key properties:
 - Squid runs natively on ARM64 — no Rosetta emulation needed
 - The devcontainer cannot perform external DNS lookups (Docker's embedded DNS only resolves container names)
 - Git/gh CLI wrappers inside the container proxy commands to a host-side tool proxy, keeping credentials off the container
-- Containers are ephemeral — torn down after each session, only bash history and Claude config persist
+- Containers are reused across sessions when workspace and extra directories haven't changed — only the tool proxy is stopped on exit. Bash history and Claude config persist via Docker volumes
 
 ## File Structure
 
@@ -65,6 +65,7 @@ Key properties:
 ├── git-proxy-wrapper.sh   # Container-side git wrapper (proxies /workspace ops to host)
 ├── gh-proxy-wrapper.sh    # Container-side gh wrapper (proxies all ops to host)
 ├── moat.sh               # Host-side launcher script (starts proxy, container, Claude)
+│                          #   Subcommands: doctor, update, down, attach, detach, plan, uninstall
 ├── install.sh             # Unified installer (curl-pipeable, auto-detects context)
 ├── .proxy-token           # Copied from DATA_DIR before builds (in .gitignore)
 └── verify.sh              # Post-start verification script
@@ -233,6 +234,12 @@ moat
 # Plan mode — read-only tools only (no Write, Edit, Bash)
 moat plan
 
+# Attach a directory to a running session (live-sync via mutagen, or restart fallback)
+moat attach ~/Projects/shared-lib
+
+# Detach a synced directory (or --all)
+moat detach shared-lib
+
 # Update (pull latest code + rebuild image)
 moat update
 ```
@@ -242,12 +249,12 @@ moat update
 1. `moat.sh` resolves symlinks to find `REPO_DIR` (the actual repo checkout)
 2. Ensures `~/.moat/data/` exists with a proxy token (auto-generates or migrates from old installs)
 3. Copies the proxy token into the repo dir for Docker build context
-4. Any previous sandbox session is torn down (ephemeral) — proxy killed, containers removed
-5. Tool proxy starts on the host (`127.0.0.1:9876`), reads token via `MOAT_TOKEN_FILE` env var
-6. `devcontainer up` starts squid + devcontainer, waits for squid health check
+4. Tool proxy starts on the host (`127.0.0.1:9876`), reads token via `MOAT_TOKEN_FILE` env var
+5. Checks for a running container — reuses if workspace and extra directories match, recreates otherwise
+6. `devcontainer up` starts squid + devcontainer (if needed), waits for squid health check
 7. `verify-sandbox.sh` runs: validates proxy, network isolation, token file, and tool proxy connectivity
 8. Claude Code launches with `--dangerously-skip-permissions`
-9. On exit: `trap cleanup EXIT` kills proxy and tears down containers
+9. On exit: `trap cleanup EXIT` kills proxy and terminates any Mutagen sync sessions (containers kept running for reuse)
 
 ### Update
 
@@ -339,13 +346,14 @@ Note: Use a leading dot (`.example.com`) to match the domain and all subdomains.
 
 `moat plan` launches Claude with `--allowedTools "Read,Grep,Glob,Task,WebFetch,WebSearch"` — only read-only tools. This prevents Claude from writing files, running commands, or making edits during planning/research phases.
 
-## Ephemeral Containers
+## Container Reuse
 
-Containers are torn down after each session:
-- The launcher script's `trap cleanup EXIT` runs automatically when Claude exits
-- Kills the tool proxy process, runs `docker compose down`
-- **Persistent volumes** (`moat-bashhistory`, `moat-config`) survive teardowns — bash history and Claude config carry over between sessions
-- A fresh container is built each time (with Docker layer caching, this is fast)
+Containers persist across sessions for fast re-launch:
+- On exit, the `trap cleanup EXIT` kills the tool proxy and terminates Mutagen sync sessions, but **leaves the container running**
+- On next launch, the container is reused if the workspace and `--add-dir` mounts match
+- If the workspace or extra directories changed, the container is automatically recreated
+- **Persistent volumes** (`moat-bashhistory`, `moat-config`) survive even full teardowns — bash history and Claude config carry over
+- Use `moat down` to explicitly tear down containers
 
 ## Resource Limits
 
@@ -370,7 +378,7 @@ Set in `docker-compose.yml` via `deploy.resources.limits`:
 | Non-root user | Runs as `node` user | Privilege escalation |
 | No NET_ADMIN/NET_RAW | Capabilities not granted | Kernel-level network manipulation |
 | Resource limits | CPU/memory caps via docker-compose | Resource exhaustion on host |
-| Ephemeral containers | Torn down after each session | State accumulation, persistent compromises |
+| Container reuse with rebuild | Recreated when workspace/mounts change | Stale state from previous workspace |
 | Plan mode | Read-only tool restrictions | Unintended writes during research/planning |
 
 ## Comparison to Previous iptables Approach
