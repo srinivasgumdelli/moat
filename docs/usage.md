@@ -65,7 +65,9 @@ After attaching, tell Claude about the new directory:
 
 > "I have an additional directory at /extra/shared-lib"
 
-**Requires**: `mutagen` (`brew install mutagen-io/mutagen/mutagen`)
+**With mutagen** (`brew install mutagen-io/mutagen/mutagen`): files sync live in both directions, no restart needed.
+
+**Without mutagen**: falls back to restarting the container with the directory as a bind mount. This ends the current Claude session — you'll be prompted for confirmation. Resume with `moat --resume` afterward.
 
 ### `moat detach` — Remove a live-synced directory
 

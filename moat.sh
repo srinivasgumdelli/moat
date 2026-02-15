@@ -206,11 +206,6 @@ fi
 
 if [ "${1:-}" = "attach" ]; then
   shift
-  if ! command -v mutagen &>/dev/null; then
-    err "mutagen is required for live-sync. Install it with:"
-    err "  brew install mutagen-io/mutagen/mutagen"
-    exit 1
-  fi
   if [ -z "${1:-}" ] || [ ! -d "${1:-}" ]; then
     err "Usage: moat attach <directory>"
     exit 1
@@ -224,31 +219,89 @@ if [ "${1:-}" = "attach" ]; then
     exit 1
   fi
 
-  # Check for existing session with this basename
-  if mutagen sync list --label-selector "moat=true,moat-dir=$ATTACH_NAME" 2>/dev/null | grep -q "Name:"; then
-    err "A sync session for '$ATTACH_NAME' already exists. Detach it first with:"
-    err "  moat detach $ATTACH_NAME"
-    exit 1
+  if command -v mutagen &>/dev/null; then
+    # --- Live-sync via Mutagen (no restart needed) ---
+
+    # Check for existing session with this basename
+    if mutagen sync list --label-selector "moat=true,moat-dir=$ATTACH_NAME" 2>/dev/null | grep -q "Name:"; then
+      err "A sync session for '$ATTACH_NAME' already exists. Detach it first with:"
+      err "  moat detach $ATTACH_NAME"
+      exit 1
+    fi
+
+    # Create target directory inside container
+    docker exec moat-devcontainer-1 mkdir -p "/extra/$ATTACH_NAME"
+    docker exec moat-devcontainer-1 chown node:node "/extra/$ATTACH_NAME"
+
+    # Create mutagen sync session
+    mutagen sync create \
+      --name "moat-$ATTACH_NAME" \
+      --label "moat=true" \
+      --label "moat-dir=$ATTACH_NAME" \
+      --sync-mode two-way-resolved \
+      --default-owner-beta node \
+      --default-group-beta node \
+      --ignore-vcs \
+      "$ATTACH_DIR" \
+      "docker://moat-devcontainer-1/extra/$ATTACH_NAME"
+
+    log "Attached ${BOLD}$ATTACH_DIR${RESET} -> ${BOLD}/extra/$ATTACH_NAME${RESET} (live-sync)"
+    log "Tell Claude about it: ${DIM}\"I have an additional directory at /extra/$ATTACH_NAME\"${RESET}"
+  else
+    # --- Fallback: restart container with new bind mount ---
+
+    log "${YELLOW}mutagen not installed — falling back to container restart.${RESET}"
+    log "This will ${BOLD}end the current Claude session${RESET}."
+    log "For live-sync without restarting: ${DIM}brew install mutagen-io/mutagen/mutagen${RESET}"
+    echo ""
+    printf "  ${CYAN}?${RESET} Restart container to add ${BOLD}/extra/$ATTACH_NAME${RESET}? ${DIM}[y/N]${RESET} "
+    read -r answer
+    case "$answer" in
+      [yY]|[yY][eE][sS]) ;;
+      *)
+        log "Aborted."
+        exit 0
+        ;;
+    esac
+
+    # Read current workspace from the running container
+    ATTACH_WORKSPACE=$(docker inspect moat-devcontainer-1 \
+      --format '{{index .Config.Labels "devcontainer.local_folder"}}' 2>/dev/null)
+
+    # Collect existing /extra/* bind mount sources + add the new one
+    EXISTING_EXTRA_SOURCES=$(docker inspect moat-devcontainer-1 \
+      --format '{{range .Mounts}}{{if eq .Type "bind"}}{{.Destination}} {{.Source}}{{"\n"}}{{end}}{{end}}' 2>/dev/null \
+      | grep '^/extra/' | awk '{print $2}') || true
+
+    {
+      echo "services:"
+      echo "  devcontainer:"
+      echo "    volumes:"
+      # Re-add existing extra mounts
+      while IFS= read -r src; do
+        [ -z "$src" ] && continue
+        echo "      - ${src}:/extra/$(basename "$src"):cached"
+      done <<< "$EXISTING_EXTRA_SOURCES"
+      # Add the new directory
+      echo "      - ${ATTACH_DIR}:/extra/${ATTACH_NAME}:cached"
+    } > "$OVERRIDE_FILE"
+
+    # Recreate container
+    log "Stopping container..."
+    docker compose --project-name moat \
+      -f "$REPO_DIR/docker-compose.yml" \
+      -f "$SERVICES_FILE" \
+      -f "$OVERRIDE_FILE" down 2>/dev/null || true
+
+    log "Starting container with new mount..."
+    export MOAT_WORKSPACE="$ATTACH_WORKSPACE"
+    devcontainer up \
+      --workspace-folder "$ATTACH_WORKSPACE" \
+      --config "$REPO_DIR/devcontainer.json"
+
+    log "Container restarted with ${BOLD}/extra/$ATTACH_NAME${RESET}"
+    log "Resume your session: ${BOLD}moat --resume${RESET}"
   fi
-
-  # Create target directory inside container
-  docker exec moat-devcontainer-1 mkdir -p "/extra/$ATTACH_NAME"
-  docker exec moat-devcontainer-1 chown node:node "/extra/$ATTACH_NAME"
-
-  # Create mutagen sync session
-  mutagen sync create \
-    --name "moat-$ATTACH_NAME" \
-    --label "moat=true" \
-    --label "moat-dir=$ATTACH_NAME" \
-    --sync-mode two-way-resolved \
-    --default-owner-beta node \
-    --default-group-beta node \
-    --ignore-vcs \
-    "$ATTACH_DIR" \
-    "docker://moat-devcontainer-1/extra/$ATTACH_NAME"
-
-  log "Attached ${BOLD}$ATTACH_DIR${RESET} -> ${BOLD}/extra/$ATTACH_NAME${RESET}"
-  log "Tell Claude about it: ${DIM}\"I have an additional directory at /extra/$ATTACH_NAME\"${RESET}"
   exit 0
 fi
 
