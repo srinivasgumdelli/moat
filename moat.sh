@@ -321,7 +321,13 @@ container_running() {
     -f "$REPO_DIR/docker-compose.yml" \
     -f "$SERVICES_FILE" \
     -f "$OVERRIDE_FILE" ps --status running --format '{{.Name}}' 2>/dev/null \
-    | grep -q devcontainer
+    | grep -q devcontainer || return 1
+
+  # Verify the running container was started for the same workspace
+  local current_workspace
+  current_workspace=$(docker inspect moat-devcontainer-1 \
+    --format '{{index .Config.Labels "devcontainer.local_folder"}}' 2>/dev/null) || return 1
+  [ "$current_workspace" = "$WORKSPACE" ]
 }
 
 # Start or reuse tool proxy
@@ -352,6 +358,18 @@ ensure_token_in_repo
 if container_running; then
   log "Reusing running container"
 else
+  # Tear down any container running for a different workspace
+  if docker compose --project-name moat \
+    -f "$REPO_DIR/docker-compose.yml" \
+    -f "$SERVICES_FILE" \
+    -f "$OVERRIDE_FILE" ps --status running --format '{{.Name}}' 2>/dev/null \
+    | grep -q devcontainer; then
+    log "Workspace changed — tearing down previous container..."
+    docker compose --project-name moat \
+      -f "$REPO_DIR/docker-compose.yml" \
+      -f "$SERVICES_FILE" \
+      -f "$OVERRIDE_FILE" down 2>/dev/null || true
+  fi
   log "Starting devcontainer..."
   devcontainer up \
     --workspace-folder "$WORKSPACE" \
