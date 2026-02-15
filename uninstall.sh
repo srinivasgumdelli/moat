@@ -59,6 +59,16 @@ echo -e "${BOLD}Moat Uninstaller${RESET}"
 # --- 1. Stop running containers & tool proxy ---
 section "Containers & tool proxy"
 
+# Terminate any active mutagen sync sessions
+if command -v mutagen &>/dev/null; then
+  if mutagen sync list --label-selector moat=true 2>/dev/null | grep -q "Name:"; then
+    mutagen sync terminate --label-selector moat=true 2>/dev/null || true
+    done_msg "Mutagen sync sessions terminated"
+  else
+    skip_msg "No active mutagen sync sessions"
+  fi
+fi
+
 # Build compose file args (extra-dirs may not exist)
 COMPOSE_FILES=(-f "$REPO_DIR/docker-compose.yml")
 if [ -f "$REPO_DIR/docker-compose.extra-dirs.yml" ]; then

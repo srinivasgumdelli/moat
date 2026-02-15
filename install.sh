@@ -159,6 +159,7 @@ if $HAS_BREW; then
   brew_install terraform hashicorp/tap/terraform
   brew_install kubectl kubectl
   brew_install aws awscli
+  brew_install mutagen mutagen-io/mutagen/mutagen
 fi
 
 # --- 2. Clone or update repo (standalone mode only) ---
@@ -302,6 +303,8 @@ echo -e "    ${BOLD}moat${RESET}                                     # Full acce
 echo -e "    ${BOLD}moat${RESET} ~/Projects/myapp                   # Target a specific repo"
 echo -e "    ${BOLD}moat${RESET} . --add-dir ~/Projects/shared-lib  # Mount extra directories"
 echo -e "    ${BOLD}moat plan${RESET}                               # Read-only tools only"
+echo -e "    ${BOLD}moat attach${RESET} ~/Projects/shared-lib       # Live-sync dir into running session"
+echo -e "    ${BOLD}moat detach${RESET} shared-lib                  # Stop syncing"
 echo ""
 echo "  Update:"
 echo -e "    ${BOLD}moat update${RESET}                             # Pull latest + rebuild"
