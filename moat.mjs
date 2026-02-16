@@ -107,7 +107,7 @@ if (subcommand === 'init') {
 
 // --- plan subcommand: inject read-only tool restriction ---
 if (subcommand === 'plan') {
-  claudeArgs.push('--allowedTools', 'Read,Grep,Glob,Task,WebFetch,WebSearch', ...subcommandArgs);
+  claudeArgs.push('--allowedTools', 'Read,Grep,Glob,Task,WebFetch,WebSearch');
 }
 
 // --- Main flow ---
