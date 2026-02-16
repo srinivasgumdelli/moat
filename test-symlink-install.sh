@@ -101,11 +101,11 @@ else
   fail "Symlink points to $TARGET (expected $SCRIPT_DIR)"
 fi
 
-# moat.sh is executable through the symlink
-if [ -x "$HOME/.devcontainers/moat/moat.sh" ]; then
-  pass "moat.sh is executable through symlink"
+# moat.mjs is executable through the symlink
+if [ -x "$HOME/.devcontainers/moat/moat.mjs" ]; then
+  pass "moat.mjs is executable through symlink"
 else
-  fail "moat.sh is not executable through symlink"
+  fail "moat.mjs is not executable through symlink"
 fi
 
 # -------------------------------------------------------
@@ -120,8 +120,8 @@ cat > "$SHELL_RC" << 'EOF'
 export EDITOR=vim
 
 # Moat — sandboxed Claude Code
-alias moat='~/.devcontainers/moat/moat.sh'
-alias moat-plan='~/.devcontainers/moat/moat.sh --allowedTools "Read,Grep,Glob,Task,WebFetch,WebSearch"'
+alias moat='~/.devcontainers/moat/moat.mjs'
+alias moat-plan='~/.devcontainers/moat/moat.mjs --allowedTools "Read,Grep,Glob,Task,WebFetch,WebSearch"'
 
 # other config
 export FOO=bar
@@ -159,17 +159,17 @@ else
 fi
 
 # -------------------------------------------------------
-# Test 4: moat.sh resolves REPO_DIR through symlinks
+# Test 4: moat.mjs resolves REPO_DIR through symlinks
 # -------------------------------------------------------
 echo ""
 echo "--- Test 4: REPO_DIR resolution through symlink ---"
 
-# moat.sh uses resolve_path to find the real repo dir even when invoked via symlink
+# moat.mjs uses import.meta.url to find the real repo dir even when invoked via symlink
 # Verify the symlink target directory contains expected files
-if [ -f "$HOME/.devcontainers/moat/moat.sh" ]; then
-  pass "moat.sh reachable through ~/.devcontainers/moat symlink"
+if [ -f "$HOME/.devcontainers/moat/moat.mjs" ]; then
+  pass "moat.mjs reachable through ~/.devcontainers/moat symlink"
 else
-  fail "moat.sh not reachable through symlink"
+  fail "moat.mjs not reachable through symlink"
 fi
 
 if [ -f "$HOME/.devcontainers/moat/docker-compose.yml" ]; then

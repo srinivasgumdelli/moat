@@ -56,9 +56,14 @@ moat ~/Projects/myapp                       # target a specific directory
 moat --add-dir ~/Projects/shared-lib        # mount extra directories
 moat ~/Projects/myapp --add-dir ~/lib-a --add-dir ~/lib-b
 moat plan                                   # read-only tools only (no Write, Edit, Bash)
+moat init                                   # scan deps, create .moat.yml interactively
 moat attach ~/Projects/shared-lib           # live-sync a dir into a running session
 moat detach shared-lib                      # stop syncing
 ```
+
+On first run in a workspace without `.moat.yml`, Moat scans dependency files (`package.json`, `requirements.txt`, `go.mod`, `.env.example`) and offers to create a `.moat.yml` with detected services.
+
+If `~/.claude/CLAUDE.md` exists on the host, it is automatically copied into the container so Claude Code has your global instructions.
 
 **Diagnose** setup issues:
 
@@ -139,13 +144,21 @@ Language servers (`typescript-language-server`, `pyright`, `gopls`) start lazily
 
 ## Per-project configuration
 
-Create a `.moat.yml` in your workspace root to configure background services, environment variables, and extra allowed domains per project:
+Create a `.moat.yml` in your workspace root to configure background services, environment variables, and extra allowed domains per project. You can create one manually or let Moat generate it:
+
+```bash
+moat init                    # interactive: scans deps, prompts for each service
+```
+
+Moat also auto-detects dependencies on first run if no `.moat.yml` exists. It scans `package.json`, `requirements.txt`, `pyproject.toml`, `go.mod`, and `.env.example` for common service dependencies (postgres, redis, mongo, mysql, rabbitmq).
+
+Example `.moat.yml`:
 
 ```yaml
 # .moat.yml
 services:
   postgres:
-    image: postgres:15
+    image: postgres:16
     env:
       POSTGRES_PASSWORD: moat
       POSTGRES_DB: dev
@@ -200,10 +213,24 @@ Then re-run `moat` (the container rebuilds automatically).
 
 ```
 moat/
-├── moat.sh                       # Launcher (doctor, update, down, attach, detach, plan)
+├── moat.mjs                      # Entry point (executable): argument routing, main flow, cleanup
+├── lib/
+│   ├── colors.mjs                # Terminal colors (TTY detection), log(), err()
+│   ├── exec.mjs                  # child_process wrappers: runCapture, runInherit, etc.
+│   ├── yaml.mjs                  # Minimal YAML parser for .moat.yml
+│   ├── cli.mjs                   # Argument parsing (workspace, --add-dir, subcommands)
+│   ├── compose.mjs               # Compose + squid file generation
+│   ├── container.mjs             # Container lifecycle: check, reuse, teardown, start, exec
+│   ├── proxy.mjs                 # Tool proxy lifecycle: start, stop, health check
+│   ├── doctor.mjs                # doctor subcommand
+│   ├── update.mjs                # update subcommand
+│   ├── down.mjs                  # down subcommand
+│   ├── attach.mjs                # attach/detach subcommands
+│   ├── detect.mjs                # Dependency scanner (package.json, go.mod, etc.)
+│   ├── init-config.mjs           # Interactive .moat.yml creation from detected deps
+│   └── claude-md.mjs             # Copy global CLAUDE.md into container
 ├── install.sh                    # Unified installer (curl-pipeable, auto-detects context)
 ├── tool-proxy.mjs                # Host-side proxy server with allowlists
-├── generate-project-config.mjs   # Parse .moat.yml → compose + squid config
 ├── Dockerfile                    # Container image
 ├── docker-compose.yml            # squid + devcontainer services
 ├── docker-compose.services.yml   # Per-project sidecar services (auto-generated)
@@ -214,18 +241,14 @@ moat/
 ├── moat.example.yml              # Example .moat.yml config
 ├── test.sh                       # End-to-end test suite
 ├── verify.sh                     # Post-start verification
-├── git-proxy-wrapper.sh          # Container-side git wrapper
-├── gh-proxy-wrapper.sh           # Container-side gh wrapper
-├── terraform-proxy-wrapper.sh    # Container-side terraform wrapper
-├── kubectl-proxy-wrapper.sh      # Container-side kubectl wrapper
-├── aws-proxy-wrapper.sh          # Container-side aws wrapper
+├── *-proxy-wrapper.sh            # Container-side tool wrappers (git, gh, terraform, etc.)
 ├── auto-diagnostics.sh           # PostToolUse hook for linting after edits
 ├── ide-tools.mjs                 # MCP server: diagnostics, tests, project info
 ├── ide-lsp.mjs                   # MCP server: LSP code intelligence
 └── docs/
-    ├── setup.md                  # Detailed setup guide
+    ├── usage.md                  # Full usage guide
+    ├── setup.md                  # Detailed setup / architecture
     ├── project-plan.md           # Roadmap and architecture decisions
-    ├── architecture.md           # Original squid proxy design
     └── ideas.md                  # Future IDE features
 ```
 

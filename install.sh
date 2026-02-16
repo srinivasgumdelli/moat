@@ -30,10 +30,10 @@ SYMLINK_PATH="$HOME/.devcontainers/moat"
 DATA_DIR="$HOME/.moat/data"
 
 # --- Detect context ---
-# If moat.sh exists next to this script, we're running from a cloned repo.
-# When piped via curl, $0 is "bash" / "/bin/bash" so dirname won't contain moat.sh.
+# If moat.mjs exists next to this script, we're running from a cloned repo.
+# When piped via curl, $0 is "bash" / "/bin/bash" so dirname won't contain moat.mjs.
 SCRIPT_DIR="$(cd "$(dirname "$0")" 2>/dev/null && pwd)" || SCRIPT_DIR=""
-if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/moat.sh" ]; then
+if [ -n "$SCRIPT_DIR" ] && [ -f "$SCRIPT_DIR/moat.mjs" ]; then
   MODE="in-repo"
   REPO_DIR="$SCRIPT_DIR"
 else
@@ -232,8 +232,8 @@ section "Shell"
 
 # Create symlink in ~/.local/bin
 mkdir -p "$HOME/.local/bin"
-ln -sf "$REPO_DIR/moat.sh" "$HOME/.local/bin/moat"
-pass_msg "Symlink: ~/.local/bin/moat -> moat.sh"
+ln -sf "$REPO_DIR/moat.mjs" "$HOME/.local/bin/moat"
+pass_msg "Symlink: ~/.local/bin/moat -> moat.mjs"
 
 # Detect shell rc file
 if [ -f "$HOME/.zshrc" ]; then
@@ -278,7 +278,7 @@ section "Docker image"
 echo -e "  ${DIM}This may take a few minutes on first run (cached after that)...${RESET}"
 echo ""
 
-# Ensure override files exist (moat.sh generates them at runtime, but we need them for build)
+# Ensure override files exist (moat generates them at runtime, but we need them for build)
 if [ ! -f "$REPO_DIR/docker-compose.extra-dirs.yml" ]; then
   printf 'services:\n  devcontainer: {}\n' > "$REPO_DIR/docker-compose.extra-dirs.yml"
 fi
