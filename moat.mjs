@@ -18,6 +18,7 @@ import { update } from './lib/update.mjs';
 import { down } from './lib/down.mjs';
 import { attach, detach } from './lib/attach.mjs';
 import { copyClaudeMd } from './lib/claude-md.mjs';
+import { copyMcpServers } from './lib/mcp-servers.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_DIR = __dirname;
@@ -171,6 +172,9 @@ if (await containerRunning(REPO_DIR, workspace)) {
 
 // Copy global CLAUDE.md into container
 await copyClaudeMd();
+
+// Forward host MCP server configs into container
+await copyMcpServers();
 
 // Execute Claude Code (blocks until exit)
 const exitCode = await execClaude(workspace, REPO_DIR, claudeArgs, extraDirs);
