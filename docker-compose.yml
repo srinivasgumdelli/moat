@@ -49,6 +49,7 @@ services:
       - NODE_OPTIONS=--max-old-space-size=4096
       - CLAUDE_CONFIG_DIR=/home/node/.claude
       - DEVCONTAINER=true
+      - MOAT_SANDBOX=1
     deploy:
       resources:
         limits:

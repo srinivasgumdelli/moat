@@ -172,16 +172,6 @@ if (await containerRunning(REPO_DIR, workspace)) {
 // Copy global CLAUDE.md into container
 await copyClaudeMd();
 
-// Set terminal title so the user knows they're in moat
-if (process.stdout.isTTY) {
-  process.stdout.write('\x1b]2;moat\x07');
-}
-
 // Execute Claude Code (blocks until exit)
 const exitCode = await execClaude(workspace, REPO_DIR, claudeArgs, extraDirs);
-
-// Restore terminal title on exit
-if (process.stdout.isTTY) {
-  process.stdout.write('\x1b]2;\x07');
-}
 process.exit(exitCode);
