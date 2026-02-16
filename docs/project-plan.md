@@ -440,7 +440,7 @@ Added to the Docker image (all three languages):
 
 ### What Changed
 
-`moat.sh` (557 lines of bash) was rewritten as a thin shim (~15 lines) that delegates to `moat.mjs`. All logic is now in Node.js modules under `lib/`, using only Node.js built-ins (zero npm dependencies).
+`moat.sh` (557 lines of bash) was replaced by `moat.mjs`, a directly executable Node.js script. All logic is in Node.js modules under `lib/`, using only Node.js built-ins (zero npm dependencies). No bash shim needed — `moat.mjs` has `#!/usr/bin/env node` and Node resolves symlinks via `import.meta.url`.
 
 ### New Features
 
@@ -450,8 +450,7 @@ Added to the Docker image (all three languages):
 ### File Structure
 
 ```
-moat.sh          → thin shim: resolves symlinks, exec's node moat.mjs
-moat.mjs         → entry point: argument routing, main flow, cleanup
+moat.mjs         → entry point (executable): argument routing, main flow, cleanup
 lib/
   colors.mjs     → terminal colors (TTY detection), log(), err()
   exec.mjs       → child_process wrappers: runCapture, runInherit, etc.
@@ -469,7 +468,7 @@ lib/
   claude-md.mjs  → global CLAUDE.md copier (new)
 ```
 
-**Deleted**: `generate-project-config.mjs` (absorbed into `lib/compose.mjs` + `lib/yaml.mjs`)
+**Deleted**: `generate-project-config.mjs` (absorbed into `lib/compose.mjs` + `lib/yaml.mjs`), `moat.sh` (replaced by executable `moat.mjs`)
 **Unchanged**: `tool-proxy.mjs`, `Dockerfile`, `docker-compose.yml`, `devcontainer.json`, `install.sh`
 
 ---

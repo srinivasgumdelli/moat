@@ -230,7 +230,7 @@ Language servers (typescript-language-server, pyright, gopls) start lazily on fi
 ## File layout
 
 ```
-~/.local/bin/moat                → <repo>/moat.sh (thin shim → node moat.mjs)
+~/.local/bin/moat                → <repo>/moat.mjs (executable Node.js)
 ~/.devcontainers/moat/           → <repo> (symlink, used by devcontainer)
 ~/.moat/data/.proxy-token          (persistent bearer token)
 ~/.claude/CLAUDE.md                (optional, copied into container on launch)

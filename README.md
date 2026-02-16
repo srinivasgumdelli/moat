@@ -213,8 +213,7 @@ Then re-run `moat` (the container rebuilds automatically).
 
 ```
 moat/
-├── moat.sh                       # Thin shim: resolves symlinks, exec's node moat.mjs
-├── moat.mjs                      # Entry point: argument routing, main flow, cleanup
+├── moat.mjs                      # Entry point (executable): argument routing, main flow, cleanup
 ├── lib/
 │   ├── colors.mjs                # Terminal colors (TTY detection), log(), err()
 │   ├── exec.mjs                  # child_process wrappers: runCapture, runInherit, etc.

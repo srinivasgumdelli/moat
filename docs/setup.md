@@ -57,8 +57,7 @@ Key properties:
 
 ```
 ~/.devcontainers/moat/ → <repo>        # Symlink to cloned repo
-├── moat.sh                # Thin shim: resolves symlinks, exec's node moat.mjs
-├── moat.mjs               # Entry point: argument routing, main flow, cleanup
+├── moat.mjs               # Entry point (executable): argument routing, main flow, cleanup
 ├── lib/                   # Node.js modules (zero npm dependencies)
 │   ├── colors.mjs         # Terminal colors, log(), err()
 │   ├── exec.mjs           # child_process wrappers
@@ -232,11 +231,10 @@ Installed at `/usr/local/bin/gh`:
 
 ### Launcher Script
 
-The sandbox is launched via `moat` (a symlink at `~/.local/bin/moat` → `<repo>/moat.sh`). `moat.sh` is a thin bash shim (~15 lines) that resolves symlinks to find the repo directory, then exec's `node moat.mjs`. All logic lives in Node.js modules under `lib/`, using only Node.js built-ins (zero npm dependencies).
+The sandbox is launched via `moat` (a symlink at `~/.local/bin/moat` → `<repo>/moat.mjs`). `moat.mjs` is a directly executable Node.js script (has `#!/usr/bin/env node` shebang). All logic lives in Node.js modules under `lib/`, using only Node.js built-ins (zero npm dependencies). Node resolves symlinks for `import.meta.url`, so `__dirname` correctly points to the repo regardless of how it's invoked.
 
 ```bash
-# ~/.local/bin/moat is a symlink to <repo>/moat.sh
-# moat.sh resolves symlinks and runs: exec node moat.mjs "$@"
+# ~/.local/bin/moat is a symlink to <repo>/moat.mjs
 # Ensure ~/.local/bin is on PATH (install.sh handles this automatically)
 ```
 
@@ -264,8 +262,7 @@ moat update
 
 ### What Happens on Launch
 
-1. `moat.sh` resolves symlinks to find `REPO_DIR`, then exec's `node moat.mjs`
-2. `moat.mjs` parses arguments (workspace, --add-dir, subcommands, claude args)
+1. `moat.mjs` parses arguments (workspace, --add-dir, subcommands, claude args)
 3. Ensures `~/.moat/data/` exists with a proxy token (auto-generates or migrates from old installs)
 4. If no `.moat.yml` exists, scans dependency files and offers to create one (auto-detection)
 5. Generates compose override files from `.moat.yml` (services, squid domains, extra dirs)
@@ -517,4 +514,4 @@ When the tool proxy is down, squid returns a 503 HTML error page instead of a JS
 
 Background processes started in zsh functions (`node proxy.mjs &`) are unreliable — the proxy frequently dies or never starts. This was originally a problem when the launcher was a bash script managing background processes directly.
 
-**Fix**: The launcher is now a Node.js program (`moat.mjs`) that manages the proxy via `child_process.spawn()` with proper lifecycle handling. The bash shim (`moat.sh`) only resolves symlinks and exec's Node.
+**Fix**: The launcher is now a directly executable Node.js program (`moat.mjs`) that manages the proxy via `child_process.spawn()` with proper lifecycle handling. No bash involved.
