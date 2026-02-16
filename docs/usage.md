@@ -85,6 +85,29 @@ moat detach --all                     # stop all moat sync sessions
 
 Sync sessions are also cleaned up automatically when the moat session exits.
 
+### `moat init` — Initialize project configuration
+
+```bash
+moat init [workspace]
+```
+
+Scans your project for dependency files and interactively creates a `.moat.yml` with detected services.
+
+Scans:
+- `package.json` — looks for `pg`, `redis`, `mongoose`, `mysql2`, `amqplib`, etc.
+- `requirements.txt` / `pyproject.toml` — looks for `psycopg2`, `redis`, `pymongo`, `celery`, etc.
+- `go.mod` — looks for `lib/pq`, `go-redis`, `mongo-driver`, etc.
+- `.env.example` / `.env.sample` — looks for `DATABASE_URL`, `REDIS_URL`, `MONGO_URL` patterns
+
+Detected services: `postgres`, `redis`, `mongo`, `mysql`, `rabbitmq`.
+
+```bash
+moat init                         # scan cwd, create .moat.yml
+moat init ~/Projects/myapp        # scan specific directory
+```
+
+This also runs automatically on first `moat` launch when no `.moat.yml` exists.
+
 ### `moat update` — Update and rebuild
 
 ```bash
@@ -126,12 +149,15 @@ Exits with code 1 if any FAILs, 0 otherwise.
 
 When you run `moat`:
 
-1. Any previous session is torn down (containers removed, proxy killed)
-2. Tool proxy starts on the host at `127.0.0.1:9876`
-3. `devcontainer up` starts squid (forward proxy) + devcontainer
-4. `verify.sh` runs inside the container to validate the sandbox
-5. Claude Code launches with `--dangerously-skip-permissions`
-6. On exit (or Ctrl-C), the EXIT trap tears everything down
+1. Arguments are parsed (workspace, --add-dir, subcommands, claude args)
+2. If no `.moat.yml` exists, dependency files are scanned and you're prompted to create one
+3. Compose override files are generated from `.moat.yml`
+4. Tool proxy starts on the host at `127.0.0.1:9876`
+5. Container is checked — reused if workspace and mounts match, recreated otherwise
+6. `devcontainer up` starts squid (forward proxy) + devcontainer
+7. `~/.claude/CLAUDE.md` is copied into the container (if it exists)
+8. Claude Code launches with `--dangerously-skip-permissions`
+9. On exit (or Ctrl-C), the proxy is stopped and Mutagen sessions are terminated
 
 Containers are **reused** across sessions when the workspace and extra directories haven't changed. On exit, only the tool proxy is stopped — containers keep running for fast re-launch. Bash history and Claude config persist across sessions via Docker volumes. Any Mutagen sync sessions (from `moat attach`) are terminated on exit.
 
@@ -204,12 +230,17 @@ Language servers (typescript-language-server, pyright, gopls) start lazily on fi
 ## File layout
 
 ```
-~/.local/bin/moat                → <repo>/moat.sh (launcher)
+~/.local/bin/moat                → <repo>/moat.sh (thin shim → node moat.mjs)
 ~/.devcontainers/moat/           → <repo> (symlink, used by devcontainer)
 ~/.moat/data/.proxy-token          (persistent bearer token)
+~/.claude/CLAUDE.md                (optional, copied into container on launch)
 ```
 
 The repo itself lives at `~/.moat` (curl install) or wherever you cloned it.
+
+### Global CLAUDE.md
+
+If `~/.claude/CLAUDE.md` exists on the host, Moat automatically copies it into the container at `/home/node/.claude/CLAUDE.md` after the container starts. This gives Claude Code access to your global instructions (preferences, conventions, etc.) inside the sandbox.
 
 ## Troubleshooting
 

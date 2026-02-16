@@ -174,9 +174,10 @@ The container reads this on start and configures itself accordingly.
 6. ~~**Background services**~~ — **DONE** (Phase 5: docker-compose sidecars on sandbox network with smart defaults)
 7. ~~**LSP MCP bridge**~~ — **DONE** (Phase 4c: `ide-lsp.mjs` manages persistent typescript-language-server/pyright/gopls)
 8. ~~**Live directory attach**~~ — **DONE** (`moat attach`/`detach` via Mutagen live-sync, with restart fallback when mutagen unavailable)
-9. **Terminal multiplexer** — quality of life, not urgent
-9. **Debugging tools** — high value but hard to get right for LLMs
-10. **Indexing / embeddings** — useful for large codebases, can defer
+9. ~~**Dependency detection**~~ — **DONE** (Phase 6: `lib/detect.mjs` scans package.json/requirements.txt/go.mod/.env, `lib/init-config.mjs` generates .moat.yml interactively)
+10. **Terminal multiplexer** — quality of life, not urgent
+11. **Debugging tools** — high value but hard to get right for LLMs
+12. **Indexing / embeddings** — useful for large codebases, can defer
 
 ## Open Questions
 

@@ -57,15 +57,29 @@ Key properties:
 
 ```
 ~/.devcontainers/moat/ → <repo>        # Symlink to cloned repo
+├── moat.sh                # Thin shim: resolves symlinks, exec's node moat.mjs
+├── moat.mjs               # Entry point: argument routing, main flow, cleanup
+├── lib/                   # Node.js modules (zero npm dependencies)
+│   ├── colors.mjs         # Terminal colors, log(), err()
+│   ├── exec.mjs           # child_process wrappers
+│   ├── yaml.mjs           # Minimal YAML parser for .moat.yml
+│   ├── cli.mjs            # Argument parsing
+│   ├── compose.mjs        # Compose + squid file generation
+│   ├── container.mjs      # Container lifecycle
+│   ├── proxy.mjs          # Tool proxy lifecycle
+│   ├── doctor.mjs         # doctor subcommand
+│   ├── update.mjs         # update subcommand
+│   ├── down.mjs           # down subcommand
+│   ├── attach.mjs         # attach/detach subcommands
+│   ├── detect.mjs         # Dependency scanner
+│   ├── init-config.mjs    # Interactive .moat.yml creation
+│   └── claude-md.mjs      # Copy global CLAUDE.md into container
 ├── devcontainer.json      # DevContainer CLI configuration
 ├── docker-compose.yml     # Two-service setup (squid + devcontainer)
 ├── Dockerfile             # DevContainer image (node:22, Claude Code, git-delta)
 ├── squid.conf             # Squid proxy domain whitelist
 ├── tool-proxy.mjs         # Host-side Node.js server for gh/git credential isolation
-├── git-proxy-wrapper.sh   # Container-side git wrapper (proxies /workspace ops to host)
-├── gh-proxy-wrapper.sh    # Container-side gh wrapper (proxies all ops to host)
-├── moat.sh               # Host-side launcher script (starts proxy, container, Claude)
-│                          #   Subcommands: doctor, update, down, attach, detach, plan, uninstall
+├── *-proxy-wrapper.sh     # Container-side tool wrappers (git, gh, terraform, etc.)
 ├── install.sh             # Unified installer (curl-pipeable, auto-detects context)
 ├── .proxy-token           # Copied from DATA_DIR before builds (in .gitignore)
 └── verify.sh              # Post-start verification script
@@ -218,11 +232,12 @@ Installed at `/usr/local/bin/gh`:
 
 ### Launcher Script
 
-The sandbox is launched via `moat` (a symlink at `~/.local/bin/moat` → `<repo>/moat.sh`). The script is a bash script (not a zsh function — avoids zsh job control issues that killed the proxy process) and resolves symlinks to find the repo directory.
+The sandbox is launched via `moat` (a symlink at `~/.local/bin/moat` → `<repo>/moat.sh`). `moat.sh` is a thin bash shim (~15 lines) that resolves symlinks to find the repo directory, then exec's `node moat.mjs`. All logic lives in Node.js modules under `lib/`, using only Node.js built-ins (zero npm dependencies).
 
 ```bash
 # ~/.local/bin/moat is a symlink to <repo>/moat.sh
-# Ensure ~/.local/bin is on PATH (setup.sh/install.sh handle this automatically)
+# moat.sh resolves symlinks and runs: exec node moat.mjs "$@"
+# Ensure ~/.local/bin is on PATH (install.sh handles this automatically)
 ```
 
 ### Running
@@ -233,6 +248,9 @@ moat
 
 # Plan mode — read-only tools only (no Write, Edit, Bash)
 moat plan
+
+# Initialize .moat.yml from detected dependencies
+moat init
 
 # Attach a directory to a running session (live-sync via mutagen, or restart fallback)
 moat attach ~/Projects/shared-lib
@@ -246,15 +264,17 @@ moat update
 
 ### What Happens on Launch
 
-1. `moat.sh` resolves symlinks to find `REPO_DIR` (the actual repo checkout)
-2. Ensures `~/.moat/data/` exists with a proxy token (auto-generates or migrates from old installs)
-3. Copies the proxy token into the repo dir for Docker build context
-4. Tool proxy starts on the host (`127.0.0.1:9876`), reads token via `MOAT_TOKEN_FILE` env var
-5. Checks for a running container — reuses if workspace and extra directories match, recreates otherwise
-6. `devcontainer up` starts squid + devcontainer (if needed), waits for squid health check
-7. `verify-sandbox.sh` runs: validates proxy, network isolation, token file, and tool proxy connectivity
-8. Claude Code launches with `--dangerously-skip-permissions`
-9. On exit: `trap cleanup EXIT` kills proxy and terminates any Mutagen sync sessions (containers kept running for reuse)
+1. `moat.sh` resolves symlinks to find `REPO_DIR`, then exec's `node moat.mjs`
+2. `moat.mjs` parses arguments (workspace, --add-dir, subcommands, claude args)
+3. Ensures `~/.moat/data/` exists with a proxy token (auto-generates or migrates from old installs)
+4. If no `.moat.yml` exists, scans dependency files and offers to create one (auto-detection)
+5. Generates compose override files from `.moat.yml` (services, squid domains, extra dirs)
+6. Tool proxy starts on the host (`127.0.0.1:9876`), reads token via `MOAT_TOKEN_FILE` env var
+7. Checks for a running container — reuses if workspace and extra directories match, recreates otherwise
+8. `devcontainer up` starts squid + devcontainer (if needed), waits for squid health check
+9. Copies `~/.claude/CLAUDE.md` into the container (if it exists on the host)
+10. Claude Code launches with `--dangerously-skip-permissions` via `devcontainer exec`
+11. On exit: synchronous cleanup kills proxy and terminates any Mutagen sync sessions (containers kept running for reuse)
 
 ### Update
 
@@ -321,12 +341,13 @@ Use a leading dot to match the domain and all subdomains.
 ### How It Works
 
 When you run `moat`, the launcher:
-1. Reads `<workspace>/.moat.yml`
-2. Generates `docker-compose.services.yml` with sidecar services on the sandbox network
-3. Generates `squid-runtime.conf` with base domains + project-specific domains
-4. Starts everything via `devcontainer up`
+1. If no `.moat.yml` exists, scans dependency files and offers to create one (`lib/detect.mjs` + `lib/init-config.mjs`)
+2. Reads `<workspace>/.moat.yml` (`lib/compose.mjs`)
+3. Generates `docker-compose.services.yml` with sidecar services on the sandbox network
+4. Generates `squid-runtime.conf` with base domains + project-specific domains
+5. Starts everything via `devcontainer up`
 
-If no `.moat.yml` exists, empty placeholders are generated (no-op — same behavior as before).
+If no `.moat.yml` exists and the user declines auto-detection (or no services are detected), empty placeholders are generated (no-op).
 
 See `moat.example.yml` in the repo for a fully documented example.
 
@@ -349,7 +370,7 @@ Note: Use a leading dot (`.example.com`) to match the domain and all subdomains.
 ## Container Reuse
 
 Containers persist across sessions for fast re-launch:
-- On exit, the `trap cleanup EXIT` kills the tool proxy and terminates Mutagen sync sessions, but **leaves the container running**
+- On exit, the process exit handler kills the tool proxy and terminates Mutagen sync sessions, but **leaves the container running**
 - On next launch, the container is reused if the workspace and `--add-dir` mounts match
 - If the workspace or extra directories changed, the container is automatically recreated
 - **Persistent volumes** (`moat-bashhistory`, `moat-config`) survive even full teardowns — bash history and Claude config carry over
@@ -492,8 +513,8 @@ When the tool proxy is down, squid returns a 503 HTML error page instead of a JS
 
 **Fix**: Wrapper scripts validate the response is JSON before parsing: `if ! echo "$RESPONSE" | jq -e '.exitCode' >/dev/null 2>&1`. On failure, they show a clean one-line error: `[git-proxy] ERROR: Tool proxy unreachable or returned invalid response`.
 
-### zsh job control kills background proxy
+### zsh job control kills background proxy (historical)
 
-Background processes started in zsh functions (`node proxy.mjs &`) are unreliable — the proxy frequently dies or never starts. Symptoms: no pid file, empty log file, `kill -0 $PID` fails immediately. Tried `nohup`, `disown`, `</dev/null` redirection — none worked consistently.
+Background processes started in zsh functions (`node proxy.mjs &`) are unreliable — the proxy frequently dies or never starts. This was originally a problem when the launcher was a bash script managing background processes directly.
 
-**Fix**: The launcher is a standalone bash script (`moat.sh`) instead of a zsh function. Bash's `trap cleanup EXIT` reliably manages the proxy lifecycle. The zsh side just has aliases pointing to the script.
+**Fix**: The launcher is now a Node.js program (`moat.mjs`) that manages the proxy via `child_process.spawn()` with proper lifecycle handling. The bash shim (`moat.sh`) only resolves symlinks and exec's Node.

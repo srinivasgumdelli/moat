@@ -427,8 +427,50 @@ Added to the Docker image (all three languages):
 
 ### Future IDE work
 - **playwright MCP**: Off-the-shelf `@playwright/mcp` for web preview, screenshots, DOM inspection
-- **Per-project config**: `.claude/ide.yml` to configure language servers, services, and allowed domains
-- **Background services**: Extend docker-compose for postgres, redis, etc.
+
+---
+
+## Phase 5: Per-Project Configuration (Implemented)
+
+`.moat.yml` in workspace root configures background services (postgres, redis, etc.), environment variables, and extra squid proxy domains. See README.md.
+
+---
+
+## Phase 6: Node.js Migration (Implemented)
+
+### What Changed
+
+`moat.sh` (557 lines of bash) was rewritten as a thin shim (~15 lines) that delegates to `moat.mjs`. All logic is now in Node.js modules under `lib/`, using only Node.js built-ins (zero npm dependencies).
+
+### New Features
+
+- **Dependency detection** (`lib/detect.mjs`, `lib/init-config.mjs`): Scans `package.json`, `requirements.txt`, `go.mod`, `.env.example` to detect needed services. Prompts to create `.moat.yml` automatically on first run, or via `moat init`.
+- **Global CLAUDE.md** (`lib/claude-md.mjs`): Copies `~/.claude/CLAUDE.md` into the container via `docker cp` after startup, so Claude Code has the user's global instructions.
+
+### File Structure
+
+```
+moat.sh          → thin shim: resolves symlinks, exec's node moat.mjs
+moat.mjs         → entry point: argument routing, main flow, cleanup
+lib/
+  colors.mjs     → terminal colors (TTY detection), log(), err()
+  exec.mjs       → child_process wrappers: runCapture, runInherit, etc.
+  yaml.mjs       → YAML parser (extracted from generate-project-config.mjs)
+  cli.mjs        → argument parsing (workspace, --add-dir, subcommands)
+  compose.mjs    → compose/squid file generation (absorbs generate-project-config.mjs)
+  container.mjs  → container lifecycle: check, reuse, teardown, start, exec
+  proxy.mjs      → tool proxy lifecycle: start, stop, health check
+  doctor.mjs     → doctor subcommand
+  update.mjs     → update subcommand
+  down.mjs       → down subcommand
+  attach.mjs     → attach/detach subcommands
+  detect.mjs     → dependency scanner (new)
+  init-config.mjs → interactive .moat.yml creation (new)
+  claude-md.mjs  → global CLAUDE.md copier (new)
+```
+
+**Deleted**: `generate-project-config.mjs` (absorbed into `lib/compose.mjs` + `lib/yaml.mjs`)
+**Unchanged**: `tool-proxy.mjs`, `Dockerfile`, `docker-compose.yml`, `devcontainer.json`, `install.sh`
 
 ---
 
