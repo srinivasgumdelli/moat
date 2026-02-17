@@ -230,11 +230,6 @@ cp "$TOKEN_FILE" "$REPO_DIR/.proxy-token"
 # --- 5. Install moat on PATH ---
 section "Shell"
 
-# Create symlink in ~/.local/bin
-mkdir -p "$HOME/.local/bin"
-ln -sf "$REPO_DIR/moat.mjs" "$HOME/.local/bin/moat"
-pass_msg "Symlink: ~/.local/bin/moat -> moat.mjs"
-
 # Detect shell rc file
 if [ -f "$HOME/.zshrc" ]; then
   SHELL_RC="$HOME/.zshrc"
@@ -251,16 +246,50 @@ if grep -q "alias moat=" "$SHELL_RC" 2>/dev/null; then
   pass_msg "Removed old aliases from $(basename "$SHELL_RC")"
 fi
 
-# Ensure ~/.local/bin is on PATH
-if ! grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$SHELL_RC" 2>/dev/null; then
-  if echo "$PATH" | tr ':' '\n' | grep -qx "$HOME/.local/bin"; then
-    pass_msg "~/.local/bin already on PATH"
-  else
-    printf '\n# Moat — sandboxed Claude Code\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$SHELL_RC"
-    pass_msg "Added ~/.local/bin to PATH in $(basename "$SHELL_RC")"
+# Migrate old ~/.local/bin symlink
+if [ -L "$HOME/.local/bin/moat" ]; then
+  rm "$HOME/.local/bin/moat"
+  pass_msg "Removed old ~/.local/bin/moat symlink"
+fi
+
+# Create symlink — pick the first writable bin dir already on PATH
+BIN_DIR=""
+
+# 1. Homebrew bin (most reliable on macOS — already on PATH)
+if command -v brew &>/dev/null; then
+  BREW_BIN="$(brew --prefix)/bin"
+  if [ -d "$BREW_BIN" ] && [ -w "$BREW_BIN" ]; then
+    BIN_DIR="$BREW_BIN"
   fi
-else
-  pass_msg "~/.local/bin already in $(basename "$SHELL_RC")"
+fi
+
+# 2. /usr/local/bin (standard, already on PATH)
+if [ -z "$BIN_DIR" ] && [ -d /usr/local/bin ] && [ -w /usr/local/bin ]; then
+  BIN_DIR="/usr/local/bin"
+fi
+
+# 3. ~/.local/bin (last resort — may need PATH modification)
+if [ -z "$BIN_DIR" ]; then
+  BIN_DIR="$HOME/.local/bin"
+  mkdir -p "$BIN_DIR"
+
+  # Ensure ~/.local/bin is on PATH
+  if ! echo "$PATH" | tr ':' '\n' | grep -qx "$HOME/.local/bin"; then
+    if ! grep -q 'export PATH="$HOME/.local/bin:$PATH"' "$SHELL_RC" 2>/dev/null; then
+      printf '\n# Moat — sandboxed Claude Code\nexport PATH="$HOME/.local/bin:$PATH"\n' >> "$SHELL_RC"
+      pass_msg "Added ~/.local/bin to PATH in $(basename "$SHELL_RC")"
+    else
+      pass_msg "~/.local/bin already in $(basename "$SHELL_RC")"
+    fi
+  fi
+fi
+
+ln -sf "$REPO_DIR/moat.mjs" "$BIN_DIR/moat"
+pass_msg "Symlink: $BIN_DIR/moat -> moat.mjs"
+
+# Verify the symlink works
+if ! [ -x "$BIN_DIR/moat" ]; then
+  fail_msg "Symlink created but moat is not executable — run: chmod +x $REPO_DIR/moat.mjs"
 fi
 
 # --- 6. Check ANTHROPIC_API_KEY ---
