@@ -209,6 +209,22 @@ else
   skip_msg "~/.local/bin/moat not found"
 fi
 
+if [ -L /usr/local/bin/moat ]; then
+  rm -f /usr/local/bin/moat
+  done_msg "Removed /usr/local/bin/moat"
+else
+  skip_msg "/usr/local/bin/moat not found"
+fi
+
+# Homebrew bin
+if command -v brew &>/dev/null; then
+  BREW_MOAT="$(brew --prefix)/bin/moat"
+  if [ -L "$BREW_MOAT" ]; then
+    rm -f "$BREW_MOAT"
+    done_msg "Removed $BREW_MOAT"
+  fi
+fi
+
 # --- 7. Clean shell RC files ---
 section "Shell config"
 
