@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Moat — sandboxed Claude Code launcher
 // Usage: moat [workspace_path] [--add-dir <path>...] [claude args...]
-// Subcommands: doctor | update [--version X.Y.Z] | down | attach <dir> | detach <dir|--all> | plan | init | uninstall
+// Subcommands: doctor | update [--version X.Y.Z] | down [--all] | attach <dir> | detach <dir|--all> | plan | init | uninstall
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, lstatSync } from 'node:fs';
 import { dirname, join, basename } from 'node:path';
@@ -11,20 +11,19 @@ import { execSync, spawnSync } from 'node:child_process';
 import { parseArgs } from './lib/cli.mjs';
 import { log, err, DIM, RESET } from './lib/colors.mjs';
 import { generateProjectConfig, generateExtraDirsYaml } from './lib/compose.mjs';
-import { containerRunning, mountsMatch, anyContainerRunning, teardown, startContainer, execClaude } from './lib/container.mjs';
-import { startProxy, stopProxySync } from './lib/proxy.mjs';
+import { containerRunning, mountsMatch, teardown, startContainer, execClaude, isContainerRunning } from './lib/container.mjs';
+import { startProxy } from './lib/proxy.mjs';
 import { doctor } from './lib/doctor.mjs';
 import { update } from './lib/update.mjs';
 import { down } from './lib/down.mjs';
 import { attach, detach } from './lib/attach.mjs';
 import { copyClaudeMd } from './lib/claude-md.mjs';
 import { copyMcpServers } from './lib/mcp-servers.mjs';
+import { workspaceId, workspaceDataDir } from './lib/workspace-id.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_DIR = __dirname;
 const DATA_DIR = join(process.env.HOME, '.moat', 'data');
-const OVERRIDE_FILE = join(REPO_DIR, 'docker-compose.extra-dirs.yml');
-const SERVICES_FILE = join(REPO_DIR, 'docker-compose.services.yml');
 
 // --- Parse arguments ---
 let parsed;
@@ -81,7 +80,8 @@ if (subcommand === 'doctor') {
 }
 
 if (subcommand === 'down') {
-  await down(REPO_DIR);
+  const allFlag = subcommandArgs.includes('--all');
+  await down(REPO_DIR, { all: allFlag, workspace });
   process.exit(0);
 }
 
@@ -115,8 +115,21 @@ if (subcommand === 'plan') {
 
 process.env.MOAT_WORKSPACE = workspace;
 
-// Generate docker-compose override for extra directories
-writeFileSync(OVERRIDE_FILE, generateExtraDirsYaml(extraDirs));
+// Compute per-workspace identifiers
+const hash = workspaceId(workspace);
+const projectName = `moat-${hash}`;
+const containerName = `${projectName}-devcontainer-1`;
+const wsDir = workspaceDataDir(hash);
+mkdirSync(wsDir, { recursive: true });
+
+// Legacy migration: warn if old single-instance container exists
+if (await isContainerRunning('moat-devcontainer-1')) {
+  log(`Warning: Found legacy moat container (moat-devcontainer-1).`);
+  log(`Run 'moat down' with a previous version to clean up, or: docker rm -f moat-devcontainer-1`);
+}
+
+// Generate docker-compose override for extra directories into wsDir
+writeFileSync(join(wsDir, 'docker-compose.extra-dirs.yml'), generateExtraDirsYaml(extraDirs));
 
 if (extraDirs.length > 0) {
   log('Extra directories:');
@@ -131,8 +144,8 @@ if (!existsSync(join(workspace, '.moat.yml'))) {
   await initConfig(workspace, { auto: true });
 }
 
-// Generate per-project config from .moat.yml
-const meta = generateProjectConfig(workspace, REPO_DIR);
+// Generate per-project config from .moat.yml (writes to wsDir)
+const meta = generateProjectConfig(workspace, REPO_DIR, wsDir);
 if (meta.has_services) {
   log(`Project services: ${DIM}${meta.service_names.join(', ')}${RESET}`);
 }
@@ -140,10 +153,40 @@ if (meta.extra_domains.length > 0) {
   log(`Extra domains: ${DIM}${meta.extra_domains.join(', ')}${RESET}`);
 }
 
-// On exit: stop tool proxy, leave containers running for reuse
-process.on('exit', () => {
-  stopProxySync();
-});
+// Generate per-workspace devcontainer.json
+const devcontainerConfig = {
+  name: projectName,
+  dockerComposeFile: [
+    `${REPO_DIR}/docker-compose.yml`,
+    `${wsDir}/docker-compose.services.yml`,
+    `${wsDir}/docker-compose.extra-dirs.yml`,
+  ],
+  service: 'devcontainer',
+  workspaceFolder: '/workspace',
+  customizations: {
+    vscode: {
+      extensions: [
+        'anthropic.claude-code',
+        'dbaeumer.vscode-eslint',
+        'esbenp.prettier-vscode',
+        'eamodio.gitlens',
+      ],
+      settings: {
+        'editor.formatOnSave': true,
+        'editor.defaultFormatter': 'esbenp.prettier-vscode',
+        'terminal.integrated.defaultProfile.linux': 'zsh',
+      },
+    },
+  },
+  remoteUser: 'node',
+  remoteEnv: {
+    ANTHROPIC_API_KEY: '${localEnv:ANTHROPIC_API_KEY}',
+  },
+  postStartCommand: "echo '[moat] Container ready'",
+};
+writeFileSync(join(wsDir, 'devcontainer.json'), JSON.stringify(devcontainerConfig, null, 2) + '\n');
+
+// On exit: leave proxy running for other sessions, only clean up on `moat down`
 process.on('SIGTERM', () => process.exit(0));
 
 // Start or reuse tool proxy
@@ -154,28 +197,24 @@ if (!proxyOk) {
 }
 
 // Start or reuse container
-if (await containerRunning(REPO_DIR, workspace)) {
-  if (await mountsMatch(extraDirs)) {
+if (await containerRunning(REPO_DIR, workspace, wsDir, projectName, containerName)) {
+  if (await mountsMatch(extraDirs, containerName)) {
     log('Reusing running container');
   } else {
-    log('Extra directories changed \u2014 recreating container...');
-    await teardown(REPO_DIR);
-    await startContainer(workspace, REPO_DIR);
+    log('Extra directories changed — recreating container...');
+    await teardown(REPO_DIR, wsDir, projectName);
+    await startContainer(workspace, REPO_DIR, wsDir);
   }
 } else {
-  if (await anyContainerRunning(REPO_DIR)) {
-    log('Workspace changed \u2014 tearing down previous container...');
-    await teardown(REPO_DIR);
-  }
-  await startContainer(workspace, REPO_DIR);
+  await startContainer(workspace, REPO_DIR, wsDir);
 }
 
 // Copy global CLAUDE.md into container
-await copyClaudeMd();
+await copyClaudeMd(containerName);
 
 // Forward host MCP server configs into container
-await copyMcpServers();
+await copyMcpServers(containerName);
 
 // Execute Claude Code (blocks until exit)
-const exitCode = await execClaude(workspace, REPO_DIR, claudeArgs, extraDirs);
+const exitCode = await execClaude(workspace, REPO_DIR, wsDir, claudeArgs, extraDirs);
 process.exit(exitCode);
