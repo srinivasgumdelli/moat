@@ -122,10 +122,12 @@ const containerName = `${projectName}-devcontainer-1`;
 const wsDir = workspaceDataDir(hash);
 mkdirSync(wsDir, { recursive: true });
 
-// Legacy migration: warn if old single-instance container exists
+// Legacy migration: tear down old single-instance container
 if (await isContainerRunning('moat-devcontainer-1')) {
-  log(`Warning: Found legacy moat container (moat-devcontainer-1).`);
-  log(`Run 'moat down' with a previous version to clean up, or: docker rm -f moat-devcontainer-1`);
+  log('Removing legacy moat container...');
+  try {
+    execSync('docker rm -f moat-devcontainer-1 moat-squid-1 2>/dev/null', { stdio: 'pipe' });
+  } catch {}
 }
 
 // Generate docker-compose override for extra directories into wsDir
