@@ -11,7 +11,7 @@ import { execSync, spawnSync } from 'node:child_process';
 import { parseArgs } from './lib/cli.mjs';
 import { log, err, DIM, RESET } from './lib/colors.mjs';
 import { generateProjectConfig, generateExtraDirsYaml } from './lib/compose.mjs';
-import { containerRunning, mountsMatch, teardown, startContainer, execClaude, isContainerRunning } from './lib/container.mjs';
+import { findContainer, mountsMatch, teardown, startContainer, execClaude, isContainerRunning } from './lib/container.mjs';
 import { startProxy } from './lib/proxy.mjs';
 import { doctor } from './lib/doctor.mjs';
 import { update } from './lib/update.mjs';
@@ -115,10 +115,8 @@ if (subcommand === 'plan') {
 
 process.env.MOAT_WORKSPACE = workspace;
 
-// Compute per-workspace identifiers
+// Compute per-workspace data directory
 const hash = workspaceId(workspace);
-const projectName = `moat-${hash}`;
-const containerName = `${projectName}-devcontainer-1`;
 const wsDir = workspaceDataDir(hash);
 mkdirSync(wsDir, { recursive: true });
 
@@ -157,7 +155,7 @@ if (meta.extra_domains.length > 0) {
 
 // Generate per-workspace devcontainer.json
 const devcontainerConfig = {
-  name: projectName,
+  name: `moat-${hash}`,
   dockerComposeFile: [
     `${REPO_DIR}/docker-compose.yml`,
     `${wsDir}/docker-compose.services.yml`,
@@ -199,16 +197,24 @@ if (!proxyOk) {
 }
 
 // Start or reuse container
-if (await containerRunning(REPO_DIR, workspace, wsDir, projectName, containerName)) {
-  if (await mountsMatch(extraDirs, containerName)) {
+const existing = await findContainer(workspace);
+if (existing) {
+  if (await mountsMatch(extraDirs, existing)) {
     log('Reusing running container');
   } else {
     log('Extra directories changed — recreating container...');
-    await teardown(REPO_DIR, wsDir, projectName);
+    await teardown(workspace);
     await startContainer(workspace, REPO_DIR, wsDir);
   }
 } else {
   await startContainer(workspace, REPO_DIR, wsDir);
+}
+
+// Find actual container name (devcontainer CLI chooses the name, not us)
+const containerName = await findContainer(workspace);
+if (!containerName) {
+  err('Container not found after startup');
+  process.exit(1);
 }
 
 // Copy global CLAUDE.md into container
