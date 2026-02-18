@@ -195,15 +195,44 @@ Git and `gh` commands inside the container are proxied to the host via wrapper s
 
 ### IaC tools
 
-Terraform, kubectl, and AWS CLI are available inside the container but restricted to read-only operations:
+Terraform, kubectl, and AWS CLI are available inside the container but restricted to read-only operations. Like git and gh, IaC commands are proxied to the host — credentials (AWS profiles, kubeconfigs, cloud tokens) stay on the host and never enter the container. The tool proxy validates every command before execution and rejects anything outside the allow-list.
 
-| Tool | Allowed | Blocked |
-|------|---------|---------|
-| terraform | `init`, `plan`, `validate`, `fmt`, `show`, `output`, `graph`, `providers`, `version`, `workspace`, `state`, `console` | `apply`, `destroy`, `taint`, `import`, `refresh` |
-| kubectl | `get`, `describe`, `logs`, `top`, `api-resources`, `cluster-info`, `version`, `diff`, `explain` | `apply`, `delete`, `create`, `patch`, `exec` |
-| aws | `describe-*`, `list-*`, `get-*`, `sts get-caller-identity`, `s3 ls`, `s3 cp` | `create-*`, `delete-*`, `terminate-*`, `put-*`, `update-*`, `run-*` |
+#### Terraform
 
-These restrictions are enforced server-side on the host tool proxy — the container cannot bypass them.
+| | Commands |
+|---|---|
+| **Allowed** | `init`, `plan`, `validate`, `fmt`, `show`, `output`, `graph`, `providers`, `version`, `workspace`, `state`, `console` |
+| **Blocked** | Everything else (`apply`, `destroy`, `taint`, `import`, `refresh`, etc.) |
+
+Sub-command restrictions:
+
+- `terraform state` — only `list`, `show`, `pull` (blocks `mv`, `rm`, `push`, `replace-provider`)
+- `terraform workspace` — only `list`, `show`, `select` (blocks `new`, `delete`)
+
+#### kubectl
+
+| | Commands |
+|---|---|
+| **Allowed** | `get`, `describe`, `logs`, `top`, `api-resources`, `api-versions`, `cluster-info`, `config`, `version`, `auth`, `diff`, `explain`, `wait`, `events` |
+| **Blocked** | Everything else (`apply`, `delete`, `create`, `patch`, `exec`, `edit`, `run`, `scale`, `rollout`, etc.) |
+
+Sub-command restrictions:
+
+- `kubectl config` — only `view`, `get-contexts`, `current-context`, `get-clusters`, `get-users` (blocks `set-context`, `use-context`, `set-credentials`, `delete-context`, etc.)
+- `kubectl auth` — only `can-i`, `whoami` (blocks `reconcile`)
+
+#### AWS CLI
+
+AWS commands are validated by the verb prefix of the action (the part before the first `-`).
+
+| | Verb prefixes |
+|---|---|
+| **Allowed** | `describe-*`, `list-*`, `get-*`, and any other verb not in the blocked set |
+| **Blocked** | `create`, `delete`, `terminate`, `remove`, `put`, `update`, `run`, `start`, `stop`, `reboot`, `modify`, `release`, `deregister`, `revoke`, `disable`, `enable`, `attach`, `detach`, `associate`, `disassociate`, `import`, `export`, `invoke`, `publish`, `send`, `execute`, `cancel`, `reset`, `restore` |
+
+For example, `aws ec2 describe-instances` is allowed but `aws ec2 terminate-instances` is blocked.
+
+All IaC restrictions are enforced server-side on the host tool proxy — the container cannot bypass them.
 
 ### IDE tools
 
