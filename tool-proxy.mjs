@@ -23,13 +23,43 @@ if (!HOST_WORKSPACE) {
   process.exit(1);
 }
 
+// Path mappings: /workspace -> host path, /extra/<name> -> host path
+// Loaded from MOAT_PATH_MAP file (written by moat.mjs before each launch)
+const PATH_MAP_FILE = process.env.MOAT_PATH_MAP || '';
+let pathMappings = { '/workspace': HOST_WORKSPACE };
+let pathMapMtime = 0;
+
+function loadPathMappings() {
+  if (!PATH_MAP_FILE) return;
+  try {
+    const stat = existsSync(PATH_MAP_FILE) && readFileSync(PATH_MAP_FILE, 'utf-8');
+    if (!stat) return;
+    const mtime = Date.now(); // cheap reload on every call — file is tiny
+    pathMappings = JSON.parse(stat);
+    pathMapMtime = mtime;
+  } catch {}
+}
+
+// Load once at startup
+loadPathMappings();
+
 // Translate container path to host path
 function toHostPath(containerPath) {
   if (!containerPath) return null;
-  if (containerPath === '/workspace') return HOST_WORKSPACE;
-  if (containerPath.startsWith('/workspace/')) {
-    return join(HOST_WORKSPACE, containerPath.slice('/workspace/'.length));
+
+  // Reload mappings (picks up extra dirs added by moat attach)
+  loadPathMappings();
+
+  // Check exact matches first
+  if (pathMappings[containerPath]) return pathMappings[containerPath];
+
+  // Check prefix matches (e.g. /workspace/src/foo -> HOST_WORKSPACE/src/foo)
+  for (const [prefix, hostBase] of Object.entries(pathMappings)) {
+    if (containerPath.startsWith(prefix + '/')) {
+      return join(hostBase, containerPath.slice(prefix.length + 1));
+    }
   }
+
   return containerPath;
 }
 
@@ -106,17 +136,22 @@ function validateAws(args) {
   return { allowed: true };
 }
 
+// Check if a path is a known container mount point
+function isContainerPath(p) {
+  return Object.keys(pathMappings).some(prefix => p === prefix || p.startsWith(prefix + '/'));
+}
+
 // Translate file path arguments from container paths to host paths
 function translateArgPaths(args) {
   return args.map(arg => {
-    if (arg.startsWith('/workspace/') || arg === '/workspace') {
+    if (isContainerPath(arg)) {
       return toHostPath(arg);
     }
     // Handle -var-file=/workspace/... style flags
     const eqIdx = arg.indexOf('=');
     if (eqIdx !== -1) {
       const val = arg.slice(eqIdx + 1);
-      if (val.startsWith('/workspace/') || val === '/workspace') {
+      if (isContainerPath(val)) {
         return arg.slice(0, eqIdx + 1) + toHostPath(val);
       }
     }
