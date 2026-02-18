@@ -1,6 +1,6 @@
 #!/bin/bash
-# git-proxy-wrapper.sh — routes /workspace git ops through host tool proxy
-# For paths outside /workspace, uses real git directly
+# git-proxy-wrapper.sh — routes git ops through host tool proxy
+# For paths outside /workspace and /extra, uses real git directly
 
 PROXY_URL="http://host.docker.internal:9876"
 PROXY_TOKEN=$(cat /etc/tool-proxy-token 2>/dev/null)
@@ -10,7 +10,7 @@ CWD="$(pwd)"
 should_use_proxy() {
   [ -n "$PROXY_TOKEN" ] || return 1
   case "$CWD" in
-    /workspace|/workspace/*) return 0 ;;
+    /workspace|/workspace/*|/extra|/extra/*) return 0 ;;
     *) return 1 ;;
   esac
 }
