@@ -232,10 +232,6 @@ const server = http.createServer(async (req, res) => {
     const ghToken = getGitHubToken();
     const env = {};
     if (ghToken) { env.GITHUB_TOKEN = ghToken; env.GH_TOKEN = ghToken; }
-    // Clear GPG_TTY so gpg-agent uses keychain/GUI pinentry (e.g. pinentry-mac)
-    // instead of a stale terminal inherited from the shell that started the proxy.
-    // GPG keys stay on the host — the container never sees them.
-    env.GPG_TTY = '';
     const result = await executeCommand('git', body.args, { cwd: hostCwd, env });
     process.stderr.write(`[tool-proxy] git ${body.args.join(' ')} in ${hostCwd} -> exit ${result.exitCode}\n`);
     sendJson(res, 200, result);
