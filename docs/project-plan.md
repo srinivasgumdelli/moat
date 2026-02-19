@@ -328,6 +328,7 @@ Things the sandbox does NOT prevent:
 - Make HTTP requests to whitelisted domains
 - Install packages from whitelisted registries (npm, pip)
 - Use cloud CLI tools in read-only mode (terraform plan, kubectl get, aws describe)
+- Build and run Docker containers via Podman (when `docker: true` — all traffic goes through squid)
 
 These are intentional — Claude needs these to be useful. The sandbox prevents:
 - Accessing non-whitelisted domains
@@ -470,6 +471,41 @@ lib/
 
 **Deleted**: `generate-project-config.mjs` (absorbed into `lib/compose.mjs` + `lib/yaml.mjs`), `moat.sh` (replaced by executable `moat.mjs`)
 **Unchanged**: `tool-proxy.mjs`, `Dockerfile`, `docker-compose.yml`, `devcontainer.json`, `install.sh`
+
+---
+
+## Phase 7: Docker Access via Podman (Implemented)
+
+### What Changed
+
+Added opt-in Docker access inside the sandbox via rootless Podman. When `docker: true` is set in `.moat.yml`, users can run `docker build`, `docker run`, and `docker compose` inside the devcontainer.
+
+### Why Podman
+
+A Docker socket proxy (linuxserver/socket-proxy mounting `/var/run/docker.sock`) was implemented first but rejected after security audit: containers created through the host daemon land on the host's bridge network, bypassing squid entirely. A custom filter proxy (`docker-filter-proxy.mjs`) was built to inspect container creation requests and block privileged/bind-mount/host-namespace containers, but this was still insufficient — Docker Compose requires `NETWORKS=1`, and any host-networked container has unrestricted egress.
+
+Podman solves this architecturally: it's daemonless and runs containers as child processes of the devcontainer. All traffic inherits the sandbox network and goes through squid.
+
+### Files Changed
+
+| File | Changes |
+|------|---------|
+| `Dockerfile` | Install podman, buildah, fuse-overlayfs, slirp4netns, uidmap. Configure rootless Podman (subuid/subgid, storage.conf, containers.conf). Add `docker` → `podman` wrapper. Install podman-compose |
+| `lib/compose.mjs` | Add `generateDockerYaml()` (compose overlay: /dev/fuse + seccomp=unconfined). Add `DOCKER_DOMAINS` constant. Auto-add Docker Hub + OS repos to squid. Clean stale docker compose file when disabled |
+| `moat.mjs` | Wire `docker-compose.docker.yml` into devcontainer.json when `meta.has_docker` |
+| `moat.example.yml` | Document `docker: true` option |
+| `verify.sh` | Add Podman rootless engine check |
+| `docs/usage.md` | Comprehensive Docker usage section (~150 lines) |
+| `README.md` | Docker access section + Podman in security table |
+| `docs/setup.md` | Docker/Podman architecture, security properties, trade-offs |
+
+### Security Properties
+
+- Network isolation enforced by architecture (slirp4netns → sandbox → squid), not API filtering
+- No host socket exposed
+- No host filesystem access
+- No host container visibility
+- `seccomp=unconfined` is the accepted trade-off (mitigated by capability restrictions)
 
 ---
 

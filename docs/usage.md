@@ -234,6 +234,149 @@ For example, `aws ec2 describe-instances` is allowed but `aws ec2 terminate-inst
 
 All IaC restrictions are enforced server-side on the host tool proxy — the container cannot bypass them.
 
+### Docker access
+
+When `docker: true` is set in `.moat.yml`, Docker commands are available inside the sandbox via rootless [Podman](https://podman.io/). The `docker` command is aliased to `podman`, so existing workflows and Dockerfiles work without changes.
+
+Unlike a Docker socket proxy, Podman runs containers as **child processes of the devcontainer**. This means all container traffic inherits the sandbox network and goes through squid — the domain whitelist is enforced on everything, including `docker build` and `docker run`.
+
+#### Enabling
+
+Add to your `.moat.yml`:
+
+```yaml
+docker: true
+```
+
+Then re-run `moat`. You'll see "Docker access enabled via Podman (rootless)" in the startup output.
+
+When docker is enabled, moat auto-adds these domains to the squid whitelist:
+- `.docker.io`, `.docker.com`, `production.cloudflare.docker.com` (Docker Hub)
+- `.debian.org`, `.ubuntu.com`, `.alpinelinux.org` (OS package repos for Dockerfiles)
+
+#### What works
+
+```bash
+docker build -t myapp .              # Build images from Dockerfiles
+docker build -f other/Dockerfile .   # Build with a custom Dockerfile path
+docker run myapp                     # Run a container
+docker run -d -p 8080:80 nginx       # Run detached with port mapping
+docker compose up                    # Start services from docker-compose.yml
+docker compose up -d                 # Detached mode
+docker compose down                  # Stop services
+docker images                        # List images
+docker ps                            # List containers
+docker logs <container>              # View container logs
+docker stop <container>              # Stop a container
+docker rm <container>                # Remove a container
+docker volume ls                     # List volumes
+docker network ls                    # List networks
+docker info                          # Engine info
+```
+
+Volume mounts work within the container:
+
+```bash
+docker run -v mydata:/data myapp           # Named volume — OK
+docker run --tmpfs /tmp myapp              # tmpfs — OK
+docker run -v ./src:/app myapp             # Bind mount from workspace — OK
+```
+
+#### How it works
+
+```
+devcontainer (sandbox network)
+    │
+    │  docker build / docker run / docker compose
+    │  (docker → podman alias)
+    ▼
+Podman (rootless, daemonless)
+    │  Runs containers as child processes
+    │  Network via slirp4netns
+    ▼
+All traffic → squid:3128 → internet
+              (domain whitelist enforced)
+```
+
+Podman runs entirely inside the devcontainer with no connection to the host Docker daemon:
+
+1. **No socket mount** — the host Docker socket (`/var/run/docker.sock`) is never exposed
+2. **Rootless** — Podman runs as the `node` user, not root
+3. **Network inherited** — containers use slirp4netns which routes through the devcontainer's network stack, so all traffic goes through squid
+4. **Daemonless** — no long-running daemon, no privileged socket to protect
+
+The `docker: true` flag adds `/dev/fuse` (for the fuse-overlayfs storage driver) and relaxes seccomp (so Podman can create user namespaces). Without `docker: true`, Podman is installed but can't run containers.
+
+#### Security properties
+
+| Property | Status |
+|----------|--------|
+| Squid domain whitelist on `docker run` | **Enforced** — traffic goes through sandbox network |
+| Squid domain whitelist on `docker build` (RUN instructions) | **Enforced** — builds happen inside the container |
+| Host Docker socket exposure | **None** — Podman is daemonless |
+| Host filesystem access | **None** — no connection to host daemon |
+| Host container visibility | **None** — Podman sees only its own containers |
+| Image pull/push | **Through squid** — domain whitelist enforced |
+| Container resource limits | **Bounded by devcontainer limits** (4 CPUs, 8GB) |
+
+#### Adding registry and package domains
+
+Since all traffic goes through squid, you may need to whitelist additional domains for your Dockerfiles. Common examples:
+
+```yaml
+# .moat.yml
+docker: true
+domains:
+  # Container registries (Docker Hub is auto-added)
+  - .ghcr.io              # GitHub Container Registry
+  - .quay.io              # Red Hat Quay
+  - .gcr.io               # Google Container Registry
+  # Package repos (debian/ubuntu/alpine are auto-added)
+  - .centos.org           # CentOS packages
+  - .fedoraproject.org    # Fedora packages
+  - .crates.io            # Rust packages
+  - .rubygems.org         # Ruby packages
+```
+
+If a `docker build` fails with a network error during a RUN instruction, check whether the required domain is in your squid whitelist.
+
+#### Compose
+
+`docker compose` is supported via `podman-compose`. Most docker-compose.yml files work without changes:
+
+```yaml
+# docker-compose.yml (your project's, inside the sandbox)
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      - db
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_PASSWORD: dev
+```
+
+```bash
+docker compose up       # builds and starts both services
+docker compose down     # stops and removes
+docker compose logs -f  # follow logs
+```
+
+Note: `podman-compose` handles most compose features but may differ from Docker Compose on edge cases (deploy configs, some network modes). Standard build/run/volumes/ports/depends_on/environment all work.
+
+#### Known limitations
+
+**Seccomp is relaxed.** When `docker: true` is enabled, the devcontainer runs with `seccomp=unconfined` so Podman can create user namespaces. This disables kernel syscall filtering — a defense-in-depth layer. The sandbox network isolation (squid) and rootless execution remain intact.
+
+**Build cache is ephemeral.** Podman stores images and layers inside the devcontainer. Running `moat down` destroys the container and all cached images/layers. Subsequent builds start from scratch. Images persist across `moat` sessions as long as the container isn't destroyed.
+
+**Podman-compose compatibility.** `podman-compose` handles most docker-compose.yml features but isn't 100% identical to Docker Compose. Complex compose features (deploy, configs, secrets) may behave differently.
+
 ### IDE tools
 
 Claude has access to two MCP servers inside the container:
