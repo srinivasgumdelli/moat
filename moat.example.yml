@@ -22,6 +22,14 @@ env:
   DATABASE_URL: postgres://postgres:moat@postgres:5432/dev
   REDIS_URL: redis://redis:6379
 
+# Docker access — opt-in to rootless Podman inside the sandbox
+# Enables `docker build`, `docker run`, `docker compose` via Podman.
+# Containers run as child processes of the devcontainer, so all traffic
+# goes through squid (domain whitelist enforced). No host Docker socket
+# is exposed. Common OS package repos (.debian.org, .ubuntu.com,
+# .alpinelinux.org) are auto-added to the squid whitelist.
+docker: true
+
 # Extra allowed domains — added to the squid proxy whitelist
 # Use leading dot to match domain + all subdomains (e.g., .crates.io matches crates.io and *.crates.io)
 # Base domains (github, npm, anthropic, pypi, golang, etc.) are always allowed.

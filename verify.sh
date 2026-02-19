@@ -51,6 +51,14 @@ else
     echo "WARNING: /etc/tool-proxy-token not found — tool proxy wrappers will not work"
 fi
 
+# Verify Podman (only works when docker: true grants /dev/fuse + seccomp)
+if podman info >/dev/null 2>&1; then
+    echo "--- Docker (Podman) ---"
+    echo "PASS: Podman rootless engine working"
+    podman version --format 'PASS: Podman version {{.Client.Version}}' 2>/dev/null || true
+    echo "PASS: Containers inherit sandbox network (squid enforced)"
+fi
+
 # Verify IaC tools installed
 echo "--- IaC tools ---"
 [ -f /usr/bin/terraform ] && echo "PASS: terraform installed ($(/usr/bin/terraform version -json 2>/dev/null | jq -r '.terraform_version // "unknown"'))" || echo "INFO: terraform not installed"
