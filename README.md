@@ -4,6 +4,10 @@ A sandboxed environment for running [Claude Code](https://github.com/anthropics/
 
 Claude Code runs inside a Docker container with `--dangerously-skip-permissions`. Moat makes that safe by ensuring the container can only reach whitelisted domains, never touches cloud credentials directly, and cannot mutate infrastructure.
 
+### Why "Moat"?
+
+A [moat](https://en.wikipedia.org/wiki/Moat) is a defensive ditch surrounding a castle — it doesn't make the castle invincible, but it controls what can cross the boundary. Moat does the same for AI coding agents: the container is the castle, and the network/credential isolation is the moat around it. Everything that enters or leaves goes through controlled checkpoints (squid proxy, tool proxy), not over the wall.
+
 ## How it works
 
 ```
@@ -108,6 +112,35 @@ See [docs/usage.md](docs/usage.md) for the full usage guide.
 | Non-root user | Privilege escalation |
 | Resource limits | CPU/memory exhaustion |
 | Container rebuild on change | Stale state from previous workspace |
+| Podman (rootless, daemonless) | No host socket, containers inherit squid, no host filesystem access |
+
+### Security considerations
+
+Moat is designed to be **fail-closed** — if a process ignores proxy settings or tries to connect directly, the Docker internal network blocks it. But it's not a perfect sandbox. Here's what to be aware of:
+
+**What Moat prevents:**
+- Exfiltrating data to unauthorized domains
+- Using cloud credentials to mutate infrastructure (terraform apply, kubectl delete, aws create-*)
+- Accessing cloud credentials directly (they never enter the container)
+- Reaching arbitrary internet endpoints
+
+**What Moat does NOT prevent:**
+- Reading and writing files in your mounted workspace (`~/Repos` or whatever you mount)
+- Running arbitrary code inside the container (that's the point — Claude needs bash)
+- Installing packages from whitelisted registries (npm, pip, etc.)
+- Making requests to whitelisted domains (GitHub, npm, Anthropic, etc.)
+
+**Accepted trade-offs:**
+- **Workspace is read-write**: Claude needs to edit code. Limit the mount to what's needed, not your entire home directory.
+- **ANTHROPIC_API_KEY enters the container**: This is the one credential that must be inside. It's protected by network isolation (can only reach `anthropic.com` through squid).
+- **`seccomp=unconfined` when `docker: true`**: Disables kernel syscall filtering so Podman can create user namespaces. Mitigated by capability restrictions and network isolation.
+- **Whitelisted domains are trusted**: If a whitelisted domain is compromised, the container can reach it. Keep the whitelist minimal.
+
+**Recommendations:**
+- Review `.moat.yml` domains — only whitelist what your project needs
+- Use `moat plan` for research/analysis phases where no writes are needed
+- Run `moat doctor` to verify your setup is correctly configured
+- Keep Docker Desktop and your host kernel updated (relevant when `docker: true`)
 
 ## IDE features
 
@@ -175,6 +208,46 @@ domains:
 ```
 
 All sections are optional. See `moat.example.yml` for a fully documented example.
+
+### Docker access
+
+Add `docker: true` to `.moat.yml` to enable Docker CLI and Compose inside the sandbox:
+
+```yaml
+docker: true
+```
+
+Then inside the container:
+
+```bash
+docker build -t myapp .              # Build images
+docker run myapp                     # Run containers
+docker run -d -p 8080:80 nginx       # Detached with port mapping
+docker compose up                    # Start services from docker-compose.yml
+docker compose down                  # Stop services
+docker ps / docker images / docker logs
+```
+
+No host dependencies beyond Docker Desktop — Podman is installed inside the container image. Docker Hub and common OS package repos (debian, ubuntu, alpine) are auto-added to the squid whitelist. For other registries, add them to `domains:` in `.moat.yml`:
+
+```yaml
+docker: true
+domains:
+  - .ghcr.io        # GitHub Container Registry
+  - .quay.io        # Red Hat Quay
+```
+
+Docker commands are provided by rootless [Podman](https://podman.io/) (`docker` is aliased to `podman`). Unlike a Docker socket proxy, Podman runs containers as **child processes of the devcontainer** — all traffic inherits the sandbox network and goes through squid. No host Docker socket is exposed.
+
+| Property | How |
+|----------|-----|
+| Squid whitelist on builds and runs | Podman inherits sandbox network |
+| No host socket exposure | Podman is daemonless |
+| No host filesystem access | No connection to host daemon |
+| No host container visibility | Podman sees only its own containers |
+| Resource limits | Bounded by devcontainer limits |
+
+See [docs/usage.md](docs/usage.md#docker-access) for full details, compose examples, and known limitations.
 
 ### Background services
 

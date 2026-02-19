@@ -64,6 +64,15 @@ RUN ARCH=$(dpkg --print-architecture) && \
     curl -sLO "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/${ARCH}/kubectl" && \
     chmod +x kubectl && mv kubectl /usr/local/bin/kubectl.real
 
+# Podman — rootless container engine (activated by docker: true in .moat.yml)
+# Runs containers as child processes inside the devcontainer, so all traffic
+# inherits the sandbox network and goes through squid.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    podman buildah fuse-overlayfs slirp4netns uidmap && \
+    apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    echo "node:100000:65536" >> /etc/subuid && \
+    echo "node:100000:65536" >> /etc/subgid
+
 # AWS CLI v2
 RUN ARCH=$(uname -m) && \
     curl -s "https://awscli.amazonaws.com/awscli-exe-linux-${ARCH}.zip" -o awscliv2.zip && \
@@ -108,6 +117,14 @@ RUN npm install -g typescript typescript-language-server @modelcontextprotocol/s
     curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | \
       sh -s -- -b /home/node/go/bin
 
+# Configure rootless Podman (overlay via fuse, cgroupfs, slirp4netns networking)
+RUN mkdir -p /home/node/.config/containers && \
+    printf '[storage]\ndriver = "overlay"\n\n[storage.options.overlay]\nmount_program = "/usr/bin/fuse-overlayfs"\n' \
+      > /home/node/.config/containers/storage.conf && \
+    printf '[engine]\ncgroup_manager = "cgroupfs"\nevents_logger = "file"\n\n[network]\nnetwork_backend = "slirp4netns"\n' \
+      > /home/node/.config/containers/containers.conf && \
+    pip3 install --break-system-packages podman-compose
+
 # Force git to use HTTPS instead of SSH (SSH can't traverse HTTP proxy)
 RUN git config --global url."https://github.com/".insteadOf "git@github.com:" && \
     git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
@@ -128,9 +145,14 @@ COPY gh-proxy-wrapper.sh /usr/local/bin/gh
 COPY terraform-proxy-wrapper.sh /usr/local/bin/terraform
 COPY kubectl-proxy-wrapper.sh /usr/local/bin/kubectl
 COPY aws-proxy-wrapper.sh /usr/local/bin/aws
+# docker → podman compatibility wrapper (handles "docker compose" → podman-compose)
+RUN printf '#!/bin/sh\nif [ "$1" = "compose" ]; then shift; exec podman-compose "$@"; fi\nexec podman "$@"\n' \
+      > /usr/local/bin/docker && \
+    ln -s /usr/local/bin/docker /usr/local/bin/docker-compose-wrapper
 RUN chmod 644 /etc/tool-proxy-token && \
     chmod +x /usr/local/bin/git /usr/local/bin/gh \
-             /usr/local/bin/terraform /usr/local/bin/kubectl /usr/local/bin/aws
+             /usr/local/bin/terraform /usr/local/bin/kubectl /usr/local/bin/aws \
+             /usr/local/bin/docker
 
 # Copy verification script
 COPY verify.sh /usr/local/bin/

@@ -145,10 +145,11 @@ Based on `node:22` (native arm64 on Apple Silicon):
 3. Creates workspace and Claude config directories
 4. Installs git-delta for enhanced diffs
 5. Installs IaC tools (terraform, kubectl, aws-cli) with arch-aware downloads
-6. Installs Claude Code CLI (`@anthropic-ai/claude-code`) in user-writable npm prefix
-7. Configures git to use HTTPS instead of SSH (SSH can't traverse an HTTP proxy)
-8. Copies tool proxy wrapper scripts (`git-proxy-wrapper.sh` → `/usr/local/bin/git`, `gh-proxy-wrapper.sh` → `/usr/local/bin/gh`, plus terraform/kubectl/aws wrappers) — these shadow the real binaries since `/usr/local/bin` is earlier in `PATH` than `/usr/bin`
-9. Copies the verification script
+6. Installs Podman ecosystem (podman, buildah, fuse-overlayfs, slirp4netns, uidmap) for rootless Docker access. Configures subuid/subgid mapping, overlay storage via fuse-overlayfs, cgroupfs cgroup manager, and slirp4netns networking. Installs podman-compose and a `docker` → `podman` compatibility wrapper
+7. Installs Claude Code CLI (`@anthropic-ai/claude-code`) in user-writable npm prefix
+8. Configures git to use HTTPS instead of SSH (SSH can't traverse an HTTP proxy)
+9. Copies tool proxy wrapper scripts (`git-proxy-wrapper.sh` → `/usr/local/bin/git`, `gh-proxy-wrapper.sh` → `/usr/local/bin/gh`, plus terraform/kubectl/aws wrappers) — these shadow the real binaries since `/usr/local/bin` is earlier in `PATH` than `/usr/bin`
+10. Copies the verification script
 
 No firewall packages (iptables, ipset, etc.) are needed.
 
@@ -398,6 +399,92 @@ Set in `docker-compose.yml` via `deploy.resources.limits`:
 | Resource limits | CPU/memory caps via docker-compose | Resource exhaustion on host |
 | Container reuse with rebuild | Recreated when workspace/mounts change | Stale state from previous workspace |
 | Plan mode | Read-only tool restrictions | Unintended writes during research/planning |
+| Podman (rootless, daemonless) | No host socket, containers inherit squid, no host filesystem access | Docker escape, network bypass |
+
+## Docker Access (Podman)
+
+When `docker: true` is set in `.moat.yml`, Docker commands are available inside the sandbox via rootless [Podman](https://podman.io/).
+
+### Why Podman, not a Docker socket proxy
+
+A Docker socket proxy (mounting `/var/run/docker.sock`) was considered and rejected because containers created through the host daemon land on the host's bridge network, **bypassing squid entirely**. This defeats moat's core network isolation. API-level filtering (blocking privileged containers, bind mounts, etc.) is insufficient — Docker Compose requires `NETWORKS=1`, and any container on a host-managed network has unrestricted egress.
+
+Podman solves this architecturally: it's daemonless and runs containers as **child processes of the devcontainer**. All container traffic inherits the sandbox network and goes through squid. No host socket is exposed.
+
+### Architecture
+
+```
+devcontainer (sandbox network)
+    │
+    │  docker build / docker run / docker compose
+    │  (docker → podman alias)
+    ▼
+Podman (rootless, daemonless)
+    │  Runs containers as child processes
+    │  Network via slirp4netns
+    ▼
+All traffic → squid:3128 → internet
+              (domain whitelist enforced)
+```
+
+### How it works
+
+1. `lib/compose.mjs` generates `docker-compose.docker.yml` — a compose overlay that adds `/dev/fuse` (for fuse-overlayfs storage driver) and `seccomp=unconfined` (so Podman can create user namespaces)
+2. `moat.mjs` includes this overlay in the `dockerComposeFile` array when `meta.has_docker` is true
+3. Docker Hub domains (`.docker.io`, `.docker.com`, `production.cloudflare.docker.com`) and OS package repos (`.debian.org`, `.ubuntu.com`, `.alpinelinux.org`) are auto-added to the squid whitelist
+4. Inside the container, `docker` is a wrapper that routes to `podman` (and `docker compose` to `podman-compose`)
+
+### What works
+
+```bash
+docker build -t myapp .              # Build images from Dockerfiles
+docker run myapp                     # Run a container
+docker run -d -p 8080:80 nginx       # Detached with port mapping
+docker compose up                    # Start services (via podman-compose)
+docker compose down                  # Stop services
+docker images / docker ps            # List images/containers
+docker logs / docker stop / docker rm
+docker volume ls / docker network ls
+docker info                          # Engine info
+```
+
+Volume mounts within the container work:
+```bash
+docker run -v mydata:/data myapp           # Named volume
+docker run --tmpfs /tmp myapp              # tmpfs
+docker run -v ./src:/app myapp             # Bind mount from workspace
+```
+
+### Adding registry and package domains
+
+All traffic goes through squid, so additional domains may be needed for Dockerfiles:
+
+```yaml
+# .moat.yml
+docker: true
+domains:
+  - .ghcr.io              # GitHub Container Registry
+  - .quay.io              # Red Hat Quay
+  - .gcr.io               # Google Container Registry
+  - .crates.io            # Rust packages
+```
+
+### Security properties
+
+| Property | Status |
+|----------|--------|
+| Squid domain whitelist on `docker run` | **Enforced** — traffic goes through sandbox network |
+| Squid domain whitelist on `docker build` | **Enforced** — builds happen inside the container |
+| Host Docker socket exposure | **None** — Podman is daemonless |
+| Host filesystem access | **None** — no connection to host daemon |
+| Host container visibility | **None** — Podman sees only its own containers |
+| Resource limits | **Bounded by devcontainer limits** (4 CPUs, 8GB) |
+
+### Trade-offs
+
+- **seccomp=unconfined**: Disables Docker's default syscall filter so Podman can create user namespaces (`CLONE_NEWUSER`). Mitigated by capability restrictions (no `CAP_SYS_ADMIN`) and network isolation
+- **Build cache is ephemeral**: `moat down` destroys all cached images/layers. Images persist across `moat` sessions as long as the container isn't destroyed
+- **podman-compose**: Handles most docker-compose.yml features but may differ from Docker Compose on edge cases (deploy configs, some network modes)
 
 ## Comparison to Previous iptables Approach
 
