@@ -17,8 +17,8 @@ else
 fi
 
 CWD="$(pwd)"
-JSON_PAYLOAD=$(jq -n --argjson args "$ARGS_JSON" --arg cwd "$CWD" \
-  '{args: $args, cwd: $cwd}')
+JSON_PAYLOAD=$(jq -n --argjson args "$ARGS_JSON" --arg cwd "$CWD" --arg hash "${MOAT_WORKSPACE_HASH:-}" \
+  '{args: $args, cwd: $cwd, workspace_hash: $hash}')
 
 RESPONSE=$(curl -s -X POST "${PROXY_URL}/gh" \
   -H "Content-Type: application/json" \

@@ -3,7 +3,7 @@
 // Usage: moat [workspace_path] [--add-dir <path>...] [claude args...]
 // Subcommands: doctor | update [--version X.Y.Z] | down [--all] | stop | attach <dir> | detach <dir|--all> | plan | init | uninstall
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, lstatSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, lstatSync, unlinkSync } from 'node:fs';
 import { dirname, join, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execSync, spawnSync } from 'node:child_process';
@@ -192,6 +192,9 @@ const devcontainerConfig = {
       },
     },
   },
+  containerEnv: {
+    MOAT_WORKSPACE_HASH: hash,
+  },
   remoteUser: 'node',
   remoteEnv: {
     ANTHROPIC_API_KEY: '${localEnv:ANTHROPIC_API_KEY}',
@@ -200,19 +203,22 @@ const devcontainerConfig = {
 };
 writeFileSync(join(wsDir, 'devcontainer.json'), JSON.stringify(devcontainerConfig, null, 2) + '\n');
 
-// Write path mappings for tool proxy (workspace + extra dirs)
+// Write path mappings for tool proxy (per-workspace, so multiple sessions don't clobber each other)
 const pathMappings = { '/workspace': workspace };
 for (const dir of extraDirs) {
   pathMappings[`/extra/${basename(dir)}`] = dir;
 }
-writeFileSync(join(DATA_DIR, 'path-mappings.json'), JSON.stringify(pathMappings) + '\n');
+writeFileSync(join(wsDir, 'path-mappings.json'), JSON.stringify(pathMappings) + '\n');
 
-// On exit: leave proxy running for other sessions, only clean up on `moat down`
+// On exit: clean up per-workspace path mappings so the proxy doesn't serve stale data
+process.on('exit', () => {
+  try { unlinkSync(join(wsDir, 'path-mappings.json')); } catch {}
+});
 process.on('SIGTERM', () => process.exit(0));
 
 // Start or reuse tool proxy
 ensureTokenInRepo();
-const proxyOk = await startProxy(REPO_DIR, workspace, DATA_DIR);
+const proxyOk = await startProxy(REPO_DIR, DATA_DIR);
 if (!proxyOk) {
   process.exit(1);
 }
