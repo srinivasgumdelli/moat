@@ -26,8 +26,8 @@ if [ $# -eq 0 ]; then
 else
   ARGS_JSON=$(printf '%s\0' "$@" | jq -Rs '[split("\u0000")[] | select(length > 0)]')
 fi
-JSON_PAYLOAD=$(jq -n --argjson args "$ARGS_JSON" --arg cwd "$CWD" \
-  '{args: $args, cwd: $cwd}')
+JSON_PAYLOAD=$(jq -n --argjson args "$ARGS_JSON" --arg cwd "$CWD" --arg hash "${MOAT_WORKSPACE_HASH:-}" \
+  '{args: $args, cwd: $cwd, workspace_hash: $hash}')
 
 RESPONSE=$(curl -s --max-time 300 -X POST "${PROXY_URL}/terraform" \
   -H "Content-Type: application/json" \

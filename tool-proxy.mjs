@@ -6,7 +6,7 @@
 
 import http from 'node:http';
 import { spawn, execSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -15,46 +15,69 @@ const PORT = parseInt(process.env.TOOL_PROXY_PORT || '9876');
 const TOKEN_PATH = process.env.MOAT_TOKEN_FILE || join(__dirname, '.proxy-token');
 const TOKEN = readFileSync(TOKEN_PATH, 'utf-8').trim();
 
-// Parse --workspace argument (host path that maps to /workspace in container)
-const wsIdx = process.argv.indexOf('--workspace');
-const HOST_WORKSPACE = wsIdx !== -1 ? process.argv[wsIdx + 1] : null;
-if (!HOST_WORKSPACE) {
-  process.stderr.write('Usage: tool-proxy.mjs --workspace /path/to/host/workspace\n');
+// Parse --data-dir argument (path to ~/.moat/data)
+const dataDirIdx = process.argv.indexOf('--data-dir');
+const DATA_DIR = dataDirIdx !== -1 ? process.argv[dataDirIdx + 1] : null;
+if (!DATA_DIR) {
+  process.stderr.write('Usage: tool-proxy.mjs --data-dir /path/to/moat/data\n');
   process.exit(1);
 }
 
-// Path mappings: /workspace -> host path, /extra/<name> -> host path
-// Loaded from MOAT_PATH_MAP file (written by moat.mjs before each launch)
-const PATH_MAP_FILE = process.env.MOAT_PATH_MAP || '';
-let pathMappings = { '/workspace': HOST_WORKSPACE };
-let pathMapMtime = 0;
+const WORKSPACES_DIR = join(DATA_DIR, 'workspaces');
 
-function loadPathMappings() {
-  if (!PATH_MAP_FILE) return;
+// Multi-workspace path mappings: { hash: { "/workspace": hostPath, ... } }
+let workspaceMappings = {};
+
+function loadAllPathMappings() {
+  const newMappings = {};
   try {
-    const stat = existsSync(PATH_MAP_FILE) && readFileSync(PATH_MAP_FILE, 'utf-8');
-    if (!stat) return;
-    const mtime = Date.now(); // cheap reload on every call — file is tiny
-    pathMappings = JSON.parse(stat);
-    pathMapMtime = mtime;
+    if (!existsSync(WORKSPACES_DIR)) return;
+    const entries = readdirSync(WORKSPACES_DIR, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isDirectory()) continue;
+      const mapFile = join(WORKSPACES_DIR, entry.name, 'path-mappings.json');
+      try {
+        if (existsSync(mapFile)) {
+          newMappings[entry.name] = JSON.parse(readFileSync(mapFile, 'utf-8'));
+        }
+      } catch {}
+    }
   } catch {}
+  workspaceMappings = newMappings;
 }
 
 // Load once at startup
-loadPathMappings();
+loadAllPathMappings();
+
+// Get the path mappings for a specific workspace hash
+function getMappingsForHash(workspaceHash) {
+  // Reload mappings on every request (picks up new sessions + attach changes)
+  loadAllPathMappings();
+
+  if (workspaceHash && workspaceMappings[workspaceHash]) {
+    return workspaceMappings[workspaceHash];
+  }
+
+  // Fallback: if no hash provided (backward compat), use the first available mapping
+  const hashes = Object.keys(workspaceMappings);
+  if (hashes.length > 0) {
+    return workspaceMappings[hashes[0]];
+  }
+
+  return {};
+}
 
 // Translate container path to host path
-function toHostPath(containerPath) {
+function toHostPath(containerPath, workspaceHash) {
   if (!containerPath) return null;
 
-  // Reload mappings (picks up extra dirs added by moat attach)
-  loadPathMappings();
+  const mappings = getMappingsForHash(workspaceHash);
 
   // Check exact matches first
-  if (pathMappings[containerPath]) return pathMappings[containerPath];
+  if (mappings[containerPath]) return mappings[containerPath];
 
   // Check prefix matches (e.g. /workspace/src/foo -> HOST_WORKSPACE/src/foo)
-  for (const [prefix, hostBase] of Object.entries(pathMappings)) {
+  for (const [prefix, hostBase] of Object.entries(mappings)) {
     if (containerPath.startsWith(prefix + '/')) {
       return join(hostBase, containerPath.slice(prefix.length + 1));
     }
@@ -137,22 +160,23 @@ function validateAws(args) {
 }
 
 // Check if a path is a known container mount point
-function isContainerPath(p) {
-  return Object.keys(pathMappings).some(prefix => p === prefix || p.startsWith(prefix + '/'));
+function isContainerPath(p, workspaceHash) {
+  const mappings = getMappingsForHash(workspaceHash);
+  return Object.keys(mappings).some(prefix => p === prefix || p.startsWith(prefix + '/'));
 }
 
 // Translate file path arguments from container paths to host paths
-function translateArgPaths(args) {
+function translateArgPaths(args, workspaceHash) {
   return args.map(arg => {
-    if (isContainerPath(arg)) {
-      return toHostPath(arg);
+    if (isContainerPath(arg, workspaceHash)) {
+      return toHostPath(arg, workspaceHash);
     }
     // Handle -var-file=/workspace/... style flags
     const eqIdx = arg.indexOf('=');
     if (eqIdx !== -1) {
       const val = arg.slice(eqIdx + 1);
-      if (isContainerPath(val)) {
-        return arg.slice(0, eqIdx + 1) + toHostPath(val);
+      if (isContainerPath(val, workspaceHash)) {
+        return arg.slice(0, eqIdx + 1) + toHostPath(val, workspaceHash);
       }
     }
     return arg;
@@ -236,11 +260,12 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 400, { success: false, error: 'Invalid request: args required' });
       return;
     }
+    const wsHash = body.workspace_hash || '';
     const ghToken = getGitHubToken();
     const env = {};
     if (ghToken) { env.GITHUB_TOKEN = ghToken; env.GH_TOKEN = ghToken; }
     const options = { env };
-    const hostCwd = toHostPath(body.cwd);
+    const hostCwd = toHostPath(body.cwd, wsHash);
     if (hostCwd && existsSync(hostCwd)) options.cwd = hostCwd;
     const result = await executeCommand('gh', body.args, options);
     process.stderr.write(`[tool-proxy] gh ${body.args.join(' ')} -> exit ${result.exitCode}\n`);
@@ -259,7 +284,8 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 400, { success: false, error: 'Invalid request: cwd required' });
       return;
     }
-    const hostCwd = toHostPath(body.cwd);
+    const wsHash = body.workspace_hash || '';
+    const hostCwd = toHostPath(body.cwd, wsHash);
     if (!existsSync(hostCwd)) {
       sendJson(res, 400, { success: false, error: `Directory not found: ${hostCwd}` });
       return;
@@ -286,12 +312,13 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { success: false, blocked: true, reason: validation.reason, stdout: '', stderr: validation.reason + '\n', exitCode: 126 });
       return;
     }
-    const hostCwd = toHostPath(body.cwd);
+    const wsHash = body.workspace_hash || '';
+    const hostCwd = toHostPath(body.cwd, wsHash);
     if (!hostCwd || !existsSync(hostCwd)) {
       sendJson(res, 400, { success: false, error: `Directory not found: ${hostCwd}` });
       return;
     }
-    const translatedArgs = translateArgPaths(body.args);
+    const translatedArgs = translateArgPaths(body.args, wsHash);
     const result = await executeCommand('terraform', translatedArgs, { cwd: hostCwd });
     process.stderr.write(`[tool-proxy] terraform ${body.args.join(' ')} in ${hostCwd} -> exit ${result.exitCode}\n`);
     sendJson(res, 200, result);
@@ -311,8 +338,9 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { success: false, blocked: true, reason: validation.reason, stdout: '', stderr: validation.reason + '\n', exitCode: 126 });
       return;
     }
+    const wsHash = body.workspace_hash || '';
     const options = {};
-    const hostCwd = toHostPath(body.cwd);
+    const hostCwd = toHostPath(body.cwd, wsHash);
     if (hostCwd && existsSync(hostCwd)) options.cwd = hostCwd;
     const result = await executeCommand('kubectl', body.args, options);
     process.stderr.write(`[tool-proxy] kubectl ${body.args.join(' ')} -> exit ${result.exitCode}\n`);
@@ -333,8 +361,9 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 200, { success: false, blocked: true, reason: validation.reason, stdout: '', stderr: validation.reason + '\n', exitCode: 126 });
       return;
     }
+    const wsHash = body.workspace_hash || '';
     const options = {};
-    const hostCwd = toHostPath(body.cwd);
+    const hostCwd = toHostPath(body.cwd, wsHash);
     if (hostCwd && existsSync(hostCwd)) options.cwd = hostCwd;
     const result = await executeCommand('aws', body.args, options);
     process.stderr.write(`[tool-proxy] aws ${body.args.join(' ')} -> exit ${result.exitCode}\n`);
@@ -346,7 +375,7 @@ const server = http.createServer(async (req, res) => {
 });
 
 server.listen(PORT, '127.0.0.1', () => {
-  process.stderr.write(`[tool-proxy] Listening on 127.0.0.1:${PORT} (workspace: ${HOST_WORKSPACE})\n`);
+  process.stderr.write(`[tool-proxy] Listening on 127.0.0.1:${PORT} (data-dir: ${DATA_DIR})\n`);
 });
 
 process.on('SIGTERM', () => { server.close(() => process.exit(0)); });

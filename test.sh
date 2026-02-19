@@ -32,6 +32,7 @@ cleanup() {
     -f "$SERVICES_FILE" \
     -f "$OVERRIDE_FILE" down 2>/dev/null || true
   echo "  Containers removed"
+  rm -rf "$DATA_DIR/workspaces/testtest" 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -75,8 +76,14 @@ fi
 echo ""
 echo "--- Phase 3: Tool proxy ---"
 
+# Create per-workspace path mappings for test
+TEST_HASH="testtest"
+TEST_WS_DIR="$DATA_DIR/workspaces/$TEST_HASH"
+mkdir -p "$TEST_WS_DIR"
+echo "{\"workspace\":\"$WORKSPACE\"}" > "$TEST_WS_DIR/path-mappings.json"
+
 TOOL_PROXY_PORT="$PROXY_PORT" MOAT_TOKEN_FILE="$TOKEN_FILE" \
-  node "$SCRIPT_DIR/tool-proxy.mjs" --workspace "$WORKSPACE" \
+  node "$SCRIPT_DIR/tool-proxy.mjs" --data-dir "$DATA_DIR" \
   </dev/null >/tmp/moat-test-proxy.log 2>&1 &
 PROXY_PID=$!
 sleep 1
