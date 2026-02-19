@@ -18,7 +18,7 @@ import { update } from './lib/update.mjs';
 import { down } from './lib/down.mjs';
 import { attach, detach } from './lib/attach.mjs';
 import { copyClaudeMd } from './lib/claude-md.mjs';
-import { copyMcpServers } from './lib/mcp-servers.mjs';
+import { readHostMcpServers, extractMcpDomains, copyMcpServers } from './lib/mcp-servers.mjs';
 import { workspaceId, workspaceDataDir } from './lib/workspace-id.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -151,13 +151,20 @@ if (!existsSync(join(workspace, '.moat.yml'))) {
   await initConfig(workspace, { auto: true });
 }
 
+// Read host MCP servers early — domains go into squid before container starts
+const hostMcpServers = readHostMcpServers();
+const mcpDomains = extractMcpDomains(hostMcpServers);
+
 // Generate per-project config from .moat.yml (writes to wsDir)
-const meta = generateProjectConfig(workspace, REPO_DIR, wsDir);
+const meta = generateProjectConfig(workspace, REPO_DIR, wsDir, mcpDomains);
 if (meta.has_services) {
   log(`Project services: ${DIM}${meta.service_names.join(', ')}${RESET}`);
 }
 if (meta.extra_domains.length > 0) {
   log(`Extra domains: ${DIM}${meta.extra_domains.join(', ')}${RESET}`);
+}
+if (mcpDomains.length > 0) {
+  log(`MCP domains: ${DIM}${mcpDomains.join(', ')}${RESET}`);
 }
 if (meta.has_docker) {
   log('Docker access enabled via Podman (rootless)');
@@ -248,7 +255,7 @@ if (!containerName) {
 await copyClaudeMd(containerName);
 
 // Forward host MCP server configs into container
-await copyMcpServers(containerName);
+await copyMcpServers(containerName, hostMcpServers);
 
 // Execute Claude Code (blocks until exit)
 const exitCode = await execClaude(workspace, REPO_DIR, wsDir, claudeArgs, extraDirs);
