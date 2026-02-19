@@ -11,7 +11,7 @@ CWD="$(pwd)"
 should_use_proxy() {
   [ -n "$PROXY_TOKEN" ] || return 1
   case "$CWD" in
-    /workspace|/workspace/*) return 0 ;;
+    /workspace|/workspace/*|/extra|/extra/*) return 0 ;;
     *) return 1 ;;
   esac
 }

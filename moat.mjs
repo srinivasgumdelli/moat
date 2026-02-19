@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Moat — sandboxed Claude Code launcher
 // Usage: moat [workspace_path] [--add-dir <path>...] [claude args...]
-// Subcommands: doctor | update [--version X.Y.Z] | down [--all] | attach <dir> | detach <dir|--all> | plan | init | uninstall
+// Subcommands: doctor | update [--version X.Y.Z] | down [--all] | stop | attach <dir> | detach <dir|--all> | plan | init | uninstall
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, lstatSync } from 'node:fs';
 import { dirname, join, basename } from 'node:path';
@@ -12,7 +12,7 @@ import { parseArgs } from './lib/cli.mjs';
 import { log, err, DIM, RESET } from './lib/colors.mjs';
 import { generateProjectConfig, generateExtraDirsYaml } from './lib/compose.mjs';
 import { findContainer, mountsMatch, teardown, startContainer, execClaude, isContainerRunning } from './lib/container.mjs';
-import { startProxy } from './lib/proxy.mjs';
+import { startProxy, stopProxy } from './lib/proxy.mjs';
 import { doctor } from './lib/doctor.mjs';
 import { update } from './lib/update.mjs';
 import { down } from './lib/down.mjs';
@@ -82,6 +82,13 @@ if (subcommand === 'doctor') {
 if (subcommand === 'down') {
   const allFlag = subcommandArgs.includes('--all');
   await down(REPO_DIR, { all: allFlag, workspace });
+  process.exit(0);
+}
+
+if (subcommand === 'stop') {
+  log('Stopping tool proxy...');
+  await stopProxy();
+  log('Done. Proxy will restart on next moat launch.');
   process.exit(0);
 }
 
@@ -185,6 +192,13 @@ const devcontainerConfig = {
   postStartCommand: "echo '[moat] Container ready'",
 };
 writeFileSync(join(wsDir, 'devcontainer.json'), JSON.stringify(devcontainerConfig, null, 2) + '\n');
+
+// Write path mappings for tool proxy (workspace + extra dirs)
+const pathMappings = { '/workspace': workspace };
+for (const dir of extraDirs) {
+  pathMappings[`/extra/${basename(dir)}`] = dir;
+}
+writeFileSync(join(DATA_DIR, 'path-mappings.json'), JSON.stringify(pathMappings) + '\n');
 
 // On exit: leave proxy running for other sessions, only clean up on `moat down`
 process.on('SIGTERM', () => process.exit(0));
