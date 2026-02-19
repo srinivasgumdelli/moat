@@ -159,15 +159,22 @@ if (meta.has_services) {
 if (meta.extra_domains.length > 0) {
   log(`Extra domains: ${DIM}${meta.extra_domains.join(', ')}${RESET}`);
 }
+if (meta.has_docker) {
+  log('Docker access enabled via socket proxy');
+}
 
 // Generate per-workspace devcontainer.json
+const composeFiles = [
+  `${REPO_DIR}/docker-compose.yml`,
+  `${wsDir}/docker-compose.services.yml`,
+  `${wsDir}/docker-compose.extra-dirs.yml`,
+];
+if (meta.has_docker) {
+  composeFiles.push(`${wsDir}/docker-compose.docker.yml`);
+}
 const devcontainerConfig = {
   name: `moat-${hash}`,
-  dockerComposeFile: [
-    `${REPO_DIR}/docker-compose.yml`,
-    `${wsDir}/docker-compose.services.yml`,
-    `${wsDir}/docker-compose.extra-dirs.yml`,
-  ],
+  dockerComposeFile: composeFiles,
   service: 'devcontainer',
   workspaceFolder: '/workspace',
   customizations: {

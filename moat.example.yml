@@ -22,6 +22,12 @@ env:
   DATABASE_URL: postgres://postgres:moat@postgres:5432/dev
   REDIS_URL: redis://redis:6379
 
+# Docker access — opt-in to Docker CLI + Compose inside the sandbox
+# Adds a filtered socket proxy (EXEC blocked) so you can build images,
+# run containers, and use docker compose from within the devcontainer.
+# Image pulls bypass the squid proxy (they use the host daemon's network).
+docker: true
+
 # Extra allowed domains — added to the squid proxy whitelist
 # Use leading dot to match domain + all subdomains (e.g., .crates.io matches crates.io and *.crates.io)
 # Base domains (github, npm, anthropic, pypi, golang, etc.) are always allowed.

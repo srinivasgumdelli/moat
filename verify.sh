@@ -51,6 +51,18 @@ else
     echo "WARNING: /etc/tool-proxy-token not found — tool proxy wrappers will not work"
 fi
 
+# Verify Docker access (only when docker: true in .moat.yml)
+if [ -n "${DOCKER_HOST:-}" ]; then
+    echo "--- Docker ---"
+    echo "PASS: DOCKER_HOST=${DOCKER_HOST}"
+    if docker info >/dev/null 2>&1; then
+        echo "PASS: Docker daemon reachable through socket proxy"
+    else
+        echo "ERROR: DOCKER_HOST is set but docker info failed"
+        exit 1
+    fi
+fi
+
 # Verify IaC tools installed
 echo "--- IaC tools ---"
 [ -f /usr/bin/terraform ] && echo "PASS: terraform installed ($(/usr/bin/terraform version -json 2>/dev/null | jq -r '.terraform_version // "unknown"'))" || echo "INFO: terraform not installed"
