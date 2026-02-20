@@ -230,6 +230,9 @@ if (!proxyOk) {
   process.exit(1);
 }
 
+// Per-workspace compose project name — isolates concurrent sessions
+const projectName = `moat-${hash}`;
+
 // Start or reuse container
 const existing = await findContainer(workspace);
 if (existing) {
@@ -238,10 +241,10 @@ if (existing) {
   } else {
     log('Extra directories changed — recreating container...');
     await teardown(workspace);
-    await startContainer(workspace, REPO_DIR, wsDir);
+    await startContainer(workspace, REPO_DIR, wsDir, projectName);
   }
 } else {
-  await startContainer(workspace, REPO_DIR, wsDir);
+  await startContainer(workspace, REPO_DIR, wsDir, projectName);
 }
 
 // Find actual container name (devcontainer CLI chooses the name, not us)
@@ -258,5 +261,5 @@ await copyClaudeMd(containerName);
 await copyMcpServers(containerName, hostMcpServers);
 
 // Execute Claude Code (blocks until exit)
-const exitCode = await execClaude(workspace, REPO_DIR, wsDir, claudeArgs, extraDirs);
+const exitCode = await execClaude(workspace, REPO_DIR, wsDir, claudeArgs, extraDirs, projectName);
 process.exit(exitCode);
