@@ -18,7 +18,7 @@ import { update } from './lib/update.mjs';
 import { down } from './lib/down.mjs';
 import { attach, detach } from './lib/attach.mjs';
 import { copyClaudeMd } from './lib/claude-md.mjs';
-import { readHostMcpServers, extractMcpDomains, copyMcpServers } from './lib/mcp-servers.mjs';
+import { readHostMcpServers, extractMcpDomains, extractHttpMcpServers, copyMcpServers } from './lib/mcp-servers.mjs';
 import { workspaceId, workspaceDataDir } from './lib/workspace-id.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -155,6 +155,13 @@ if (!existsSync(join(workspace, '.moat.yml'))) {
 const hostMcpServers = readHostMcpServers();
 const mcpDomains = extractMcpDomains(hostMcpServers);
 
+// Extract external HTTP MCP servers to proxy through tool-proxy (auth stays on host)
+const httpMcpServers = extractHttpMcpServers(hostMcpServers);
+if (Object.keys(httpMcpServers).length > 0) {
+  writeFileSync(join(DATA_DIR, 'mcp-servers.json'), JSON.stringify(httpMcpServers, null, 2) + '\n');
+  log(`Proxying ${Object.keys(httpMcpServers).length} HTTP MCP server${Object.keys(httpMcpServers).length === 1 ? '' : 's'} through tool-proxy ${DIM}(${Object.keys(httpMcpServers).join(', ')})${RESET}`);
+}
+
 // Generate per-project config from .moat.yml (writes to wsDir)
 const meta = generateProjectConfig(workspace, REPO_DIR, wsDir, mcpDomains);
 if (meta.has_services) {
@@ -230,6 +237,9 @@ if (!proxyOk) {
   process.exit(1);
 }
 
+// Per-workspace compose project name — isolates concurrent sessions
+const projectName = `moat-${hash}`;
+
 // Start or reuse container
 const existing = await findContainer(workspace);
 if (existing) {
@@ -238,10 +248,10 @@ if (existing) {
   } else {
     log('Extra directories changed — recreating container...');
     await teardown(workspace);
-    await startContainer(workspace, REPO_DIR, wsDir);
+    await startContainer(workspace, REPO_DIR, wsDir, projectName);
   }
 } else {
-  await startContainer(workspace, REPO_DIR, wsDir);
+  await startContainer(workspace, REPO_DIR, wsDir, projectName);
 }
 
 // Find actual container name (devcontainer CLI chooses the name, not us)
@@ -255,8 +265,11 @@ if (!containerName) {
 await copyClaudeMd(containerName);
 
 // Forward host MCP server configs into container
-await copyMcpServers(containerName, hostMcpServers);
+// External HTTP servers get proxied through tool-proxy (auth stays on host)
+const proxyToken = existsSync(tokenPath) ? readFileSync(tokenPath, 'utf-8').trim() : null;
+const proxiedServerNames = new Set(Object.keys(httpMcpServers));
+await copyMcpServers(containerName, hostMcpServers, { proxyToken, proxiedServers: proxiedServerNames });
 
 // Execute Claude Code (blocks until exit)
-const exitCode = await execClaude(workspace, REPO_DIR, wsDir, claudeArgs, extraDirs);
+const exitCode = await execClaude(workspace, REPO_DIR, wsDir, claudeArgs, extraDirs, projectName);
 process.exit(exitCode);

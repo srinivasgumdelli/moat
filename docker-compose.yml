@@ -64,4 +64,6 @@ networks:
 
 volumes:
   moat-bashhistory:
+    name: moat-bashhistory
   moat-config:
+    name: moat-config

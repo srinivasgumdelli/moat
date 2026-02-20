@@ -1,3 +1,6 @@
+ARG GO_VERSION=1.23.6
+FROM golang:${GO_VERSION} AS go-sdk
+
 FROM node:22
 
 ARG TZ
@@ -92,12 +95,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     pip3 install --break-system-packages ruff pyright && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
-# Go runtime + tools
-ARG GO_VERSION=1.23.6
-RUN ARCH=$(dpkg --print-architecture) && \
-    curl -sL -o /tmp/go.tar.gz "https://go.dev/dl/go${GO_VERSION}.linux-${ARCH}.tar.gz" && \
-    tar -C /usr/local -xzf /tmp/go.tar.gz && \
-    rm /tmp/go.tar.gz
+# Go runtime + tools (copy from official image to avoid proxy issues during build)
+COPY --from=go-sdk /usr/local/go /usr/local/go
 ENV PATH=$PATH:/usr/local/go/bin:/home/node/go/bin
 
 # Install Claude Code via native installer

@@ -237,6 +237,25 @@ function readBody(req) {
   });
 }
 
+function readRawBody(req) {
+  return new Promise((resolve) => {
+    const chunks = [];
+    req.on('data', (chunk) => { chunks.push(chunk); });
+    req.on('end', () => { resolve(Buffer.concat(chunks)); });
+  });
+}
+
+// Load MCP server config from DATA_DIR/mcp-servers.json (hot-reload on each request)
+function loadMcpServers() {
+  const configPath = join(DATA_DIR, 'mcp-servers.json');
+  try {
+    if (existsSync(configPath)) {
+      return JSON.parse(readFileSync(configPath, 'utf-8'));
+    }
+  } catch {}
+  return {};
+}
+
 function sendJson(res, statusCode, data) {
   res.writeHead(statusCode, { 'Content-Type': 'application/json' });
   res.end(JSON.stringify(data));
@@ -368,6 +387,84 @@ const server = http.createServer(async (req, res) => {
     const result = await executeCommand('aws', body.args, options);
     process.stderr.write(`[tool-proxy] aws ${body.args.join(' ')} -> exit ${result.exitCode}\n`);
     sendJson(res, 200, result);
+    return;
+  }
+
+  // MCP reverse proxy handler — forward to upstream MCP servers with auth injection
+  const mcpMatch = req.url.match(/^\/mcp\/([a-zA-Z0-9_-]+)(\/.*)?$/);
+  if (mcpMatch) {
+    const serverName = mcpMatch[1];
+    const mcpServers = loadMcpServers();
+    const serverConfig = mcpServers[serverName];
+
+    if (!serverConfig || !serverConfig.url) {
+      sendJson(res, 404, { success: false, error: `MCP server not found: ${serverName}` });
+      return;
+    }
+
+    try {
+      const body = await readRawBody(req);
+
+      // Build upstream URL — append any sub-path after /mcp/<name>
+      const subPath = mcpMatch[2] || '';
+      const upstreamUrl = serverConfig.url + subPath;
+
+      // Build upstream headers — start with content-type, inject auth from config
+      const upstreamHeaders = {};
+      if (req.headers['content-type']) {
+        upstreamHeaders['content-type'] = req.headers['content-type'];
+      }
+      if (req.headers['accept']) {
+        upstreamHeaders['accept'] = req.headers['accept'];
+      }
+      // Forward Mcp-Session-Id bidirectionally (required by MCP Streamable HTTP spec)
+      if (req.headers['mcp-session-id']) {
+        upstreamHeaders['mcp-session-id'] = req.headers['mcp-session-id'];
+      }
+
+      // Inject auth headers from server config (these never enter the container)
+      if (serverConfig.headers) {
+        for (const [key, value] of Object.entries(serverConfig.headers)) {
+          upstreamHeaders[key] = value;
+        }
+      }
+
+      const upstreamRes = await fetch(upstreamUrl, {
+        method: req.method,
+        headers: upstreamHeaders,
+        body: body.length > 0 ? body : undefined,
+      });
+
+      // Forward response status and key headers
+      const responseHeaders = {};
+      const contentType = upstreamRes.headers.get('content-type');
+      if (contentType) responseHeaders['content-type'] = contentType;
+      const sessionId = upstreamRes.headers.get('mcp-session-id');
+      if (sessionId) responseHeaders['mcp-session-id'] = sessionId;
+
+      res.writeHead(upstreamRes.status, responseHeaders);
+
+      // Stream the response body back (supports both buffered JSON and SSE)
+      if (upstreamRes.body) {
+        const reader = upstreamRes.body.getReader();
+        const pump = async () => {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            res.write(value);
+          }
+          res.end();
+        };
+        pump().catch(() => res.end());
+      } else {
+        res.end();
+      }
+
+      process.stderr.write(`[tool-proxy] mcp/${serverName} ${req.method} -> ${upstreamRes.status}\n`);
+    } catch (e) {
+      process.stderr.write(`[tool-proxy] mcp/${serverName} ERROR: ${e.message}\n`);
+      sendJson(res, 502, { success: false, error: `MCP proxy error: ${e.message}` });
+    }
     return;
   }
 
