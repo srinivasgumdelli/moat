@@ -71,10 +71,14 @@ RUN ARCH=$(dpkg --print-architecture) && \
 # Runs containers as child processes inside the devcontainer, so all traffic
 # inherits the sandbox network and goes through squid.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    podman buildah fuse-overlayfs slirp4netns uidmap && \
+    podman buildah fuse-overlayfs slirp4netns uidmap libcap2-bin && \
     apt-get clean && rm -rf /var/lib/apt/lists/* && \
+    sed -i '/^node:/d' /etc/subuid /etc/subgid && \
     echo "node:100000:65536" >> /etc/subuid && \
-    echo "node:100000:65536" >> /etc/subgid
+    echo "node:100000:65536" >> /etc/subgid && \
+    chmod 0755 /usr/bin/newuidmap /usr/bin/newgidmap && \
+    setcap cap_setuid+ep /usr/bin/newuidmap && \
+    setcap cap_setgid+ep /usr/bin/newgidmap
 
 # AWS CLI v2
 RUN ARCH=$(uname -m) && \
@@ -116,11 +120,13 @@ RUN npm install -g typescript typescript-language-server @modelcontextprotocol/s
     curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | \
       sh -s -- -b /home/node/go/bin
 
-# Configure rootless Podman (overlay via fuse, cgroupfs, slirp4netns networking)
+# Configure rootless Podman (overlay via fuse, cgroupfs manager)
+# Note: slirp4netns is used automatically for rootless networking;
+# network_backend (cni/netavark) controls the container network stack.
 RUN mkdir -p /home/node/.config/containers && \
     printf '[storage]\ndriver = "overlay"\n\n[storage.options.overlay]\nmount_program = "/usr/bin/fuse-overlayfs"\n' \
       > /home/node/.config/containers/storage.conf && \
-    printf '[engine]\ncgroup_manager = "cgroupfs"\nevents_logger = "file"\n\n[network]\nnetwork_backend = "slirp4netns"\n' \
+    printf '[engine]\ncgroup_manager = "cgroupfs"\nevents_logger = "file"\n' \
       > /home/node/.config/containers/containers.conf && \
     pip3 install --break-system-packages podman-compose
 
