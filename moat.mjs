@@ -93,7 +93,7 @@ if (subcommand === 'stop') {
 }
 
 if (subcommand === 'attach') {
-  await attach(REPO_DIR, subcommandArgs);
+  await attach(REPO_DIR, subcommandArgs, workspace);
   process.exit(0);
 }
 
