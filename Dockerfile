@@ -128,6 +128,8 @@ RUN mkdir -p /home/node/.config/containers && \
       > /home/node/.config/containers/storage.conf && \
     printf '[engine]\ncgroup_manager = "cgroupfs"\nevents_logger = "file"\n' \
       > /home/node/.config/containers/containers.conf && \
+    printf 'unqualified-search-registries = ["docker.io"]\n' \
+      > /home/node/.config/containers/registries.conf && \
     pip3 install --break-system-packages podman-compose
 
 # Force git to use HTTPS instead of SSH (SSH can't traverse HTTP proxy)
