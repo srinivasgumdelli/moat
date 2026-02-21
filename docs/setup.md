@@ -429,7 +429,7 @@ All traffic → squid:3128 → internet
 
 ### How it works
 
-1. `lib/compose.mjs` generates `docker-compose.docker.yml` — a compose overlay that adds `/dev/fuse` (for fuse-overlayfs storage driver), `seccomp=unconfined` + `apparmor=unconfined` (so Podman can create user namespaces), and `userns_mode: host` (opts out of Docker's user namespace remapping so `newuidmap` works)
+1. `lib/compose.mjs` generates `docker-compose.docker.yml` — a compose overlay that adds `/dev/fuse` (for fuse-overlayfs storage driver) and `seccomp=unconfined` (so Podman can create user namespaces)
 2. `moat.mjs` includes this overlay in the `dockerComposeFile` array when `meta.has_docker` is true
 3. Docker Hub domains (`.docker.io`, `.docker.com`, `production.cloudflare.docker.com`) and OS package repos (`.debian.org`, `.ubuntu.com`, `.alpinelinux.org`) are auto-added to the squid whitelist
 4. Inside the container, `docker` is a wrapper that routes to `podman` (and `docker compose` to `podman-compose`)
@@ -482,8 +482,7 @@ domains:
 
 ### Trade-offs
 
-- **seccomp=unconfined + apparmor=unconfined**: Disables Docker's default syscall filter and AppArmor profile so Podman can create user namespaces (`CLONE_NEWUSER`). Mitigated by capability restrictions (no `CAP_SYS_ADMIN`) and network isolation
-- **userns_mode: host**: Opts out of Docker's user namespace remapping so rootless Podman's `newuidmap` can map subordinate UIDs. The container still runs as non-root (uid 1000)
+- **seccomp=unconfined**: Disables Docker's default syscall filter so Podman can create user namespaces (`CLONE_NEWUSER`). Mitigated by capability restrictions (no `CAP_SYS_ADMIN`) and network isolation
 - **Build cache is ephemeral**: `moat down` destroys all cached images/layers. Images persist across `moat` sessions as long as the container isn't destroyed
 - **podman-compose**: Handles most docker-compose.yml features but may differ from Docker Compose on edge cases (deploy configs, some network modes)
 
