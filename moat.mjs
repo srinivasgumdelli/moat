@@ -18,6 +18,7 @@ import { update } from './lib/update.mjs';
 import { down } from './lib/down.mjs';
 import { attach, detach } from './lib/attach.mjs';
 import { copyClaudeMd } from './lib/claude-md.mjs';
+import { refreshHooks } from './lib/hooks.mjs';
 import { readHostMcpServers, extractMcpDomains, extractHttpMcpServers, copyMcpServers } from './lib/mcp-servers.mjs';
 import { workspaceId, workspaceDataDir } from './lib/workspace-id.mjs';
 
@@ -239,6 +240,12 @@ if (!proxyOk) {
   process.exit(1);
 }
 
+// Pre-create shared volumes (external: true requires they exist before compose up)
+for (const vol of ['moat-bashhistory', 'moat-config']) {
+  try { execSync(`docker volume inspect ${vol}`, { stdio: 'pipe' }); }
+  catch { execSync(`docker volume create ${vol}`, { stdio: 'pipe' }); }
+}
+
 // Per-workspace compose project name — isolates concurrent sessions
 const projectName = `moat-${hash}`;
 
@@ -265,6 +272,9 @@ if (!containerName) {
 
 // Copy global CLAUDE.md into container
 await copyClaudeMd(containerName, REPO_DIR);
+
+// Refresh hook scripts from repo (volume persistence shadows Dockerfile COPY)
+await refreshHooks(containerName, REPO_DIR);
 
 // Forward host MCP server configs into container
 // External HTTP servers get proxied through tool-proxy (auth stays on host)

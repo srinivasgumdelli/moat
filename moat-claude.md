@@ -71,31 +71,29 @@ Do not skip quality gates. If tests or diagnostics fail, fix the issues before p
 
 ## Background Agents
 
-Use `agent` to spawn read-only Claude Code agents that run in the background. They can research code, run tests, analyze patterns — without blocking your main session.
+**Proactively spawn background agents** whenever work can be parallelized. Don't wait to be asked — if a subtask is independent from your main work, fire off an agent for it automatically.
+
+Spawn agents automatically for:
+- **Tests** — kick off `agent run all tests and summarize failures` while you keep coding
+- **Diagnostics** — run type-checking/linting in the background after a batch of edits
+- **Research** — explore unfamiliar parts of the codebase while working on the main task
+- **Verification** — confirm a fix works while you move to the next task
 
 **Commands:**
-- `agent run "prompt"` — spawn a background agent
-- `agent run --name research "prompt"` — spawn with a friendly name
-- `agent list` — show all agents (id, name, pid, status, prompt snippet)
-- `agent log <id>` — show agent output (supports partial ID matching like Docker)
-- `agent kill <id>` — terminate an agent
-- `agent kill --all` — terminate all agents
+- `agent <prompt>` — spawn a background agent (default)
+- `agent --name research <prompt>` — spawn with a friendly name
+- `agent list` — show all agents
+- `agent log <id>` — show agent output (supports partial ID)
+- `agent kill <id|--all>` — terminate agent(s)
 
-**Agents are read-only** — they can read files, search code, run tests and diagnostics, and use LSP tools, but they cannot edit or write files. This prevents conflicts with your main session.
-
-**Use cases:**
-- Run tests in the background while you keep coding: `agent run "run all tests and summarize failures"`
-- Research unfamiliar code: `agent run --name research "explain the authentication flow in this codebase"`
-- Analyze patterns: `agent run "find all API endpoints and list their HTTP methods"`
-- Check for issues: `agent run "run diagnostics and list all type errors"`
+Agents are read-only — they cannot edit or write files.
 
 ## Status Line
 
 The status line at the bottom of the screen shows:
-- **Model** — which Claude model is active (e.g. Opus)
 - **task** — current beads task (in-progress or most recent open)
-- **agents** — number of running background agents (hidden when 0)
+- **agents** — running background agent count (hidden when 0)
 - **ctx** — context window usage percentage
 - **$** — session cost so far
 
-Example: `Opus  |  task: Fix auth module  |  agents: 2  |  ctx: 34%  |  $0.12`
+Example: `Fix auth module | 2 agents | 34% | $0.12`

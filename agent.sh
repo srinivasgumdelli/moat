@@ -8,20 +8,16 @@ AGENT_DIR="/tmp/moat-agents"
 
 usage() {
   cat <<'EOF'
-Usage: agent <command> [options]
-
-Commands:
-  run [--name <name>] "prompt"   Spawn a read-only background agent
-  list                           Show all agents (id, name, pid, status, prompt)
-  log <id>                       Show agent output (supports partial ID)
-  kill <id>                      Terminate an agent
-  kill --all                     Terminate all agents
+Usage: agent [--name <name>] <prompt>       Spawn a background agent
+       agent list                           Show all agents
+       agent log <id>                       Show agent output
+       agent kill <id|--all>                Terminate agent(s)
 EOF
   exit 1
 }
 
 gen_id() {
-  head -c 4 /dev/urandom | xxd -p
+  head -c 4 /dev/urandom | od -A n -t x1 | tr -d ' \n'
 }
 
 resolve_id() {
@@ -70,7 +66,8 @@ check_status() {
 }
 
 cmd_run() {
-  local name="" prompt=""
+  local name=""
+  local -a words=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --name)
@@ -78,14 +75,15 @@ cmd_run() {
         shift 2
         ;;
       *)
-        prompt="$1"
+        words+=("$1")
         shift
         ;;
     esac
   done
 
+  local prompt="${words[*]}"
   if [ -z "$prompt" ]; then
-    echo "Usage: agent run [--name <name>] \"prompt\"" >&2
+    echo "Usage: agent [--name <name>] <prompt>" >&2
     exit 1
   fi
 
@@ -97,15 +95,18 @@ cmd_run() {
   [ -z "$name" ] && name="agent-${id:0:4}"
 
   local allowed_tools="Read,Grep,Glob,Task,WebFetch,WebSearch"
-  allowed_tools+=",mcp__ide-tools__run_tests,mcp__ide-tools__run_diagnostics"
-  allowed_tools+=",mcp__ide-tools__list_tests,mcp__ide-tools__get_project_info"
-  allowed_tools+=",mcp__ide-lsp__lsp_hover,mcp__ide-lsp__lsp_definition"
-  allowed_tools+=",mcp__ide-lsp__lsp_references,mcp__ide-lsp__lsp_diagnostics"
-  allowed_tools+=",mcp__ide-lsp__lsp_symbols,mcp__ide-lsp__lsp_workspace_symbols"
+  allowed_tools+=",mcp__ide_tools__run_tests,mcp__ide_tools__run_diagnostics"
+  allowed_tools+=",mcp__ide_tools__list_tests,mcp__ide_tools__get_project_info"
+  allowed_tools+=",mcp__ide_lsp__lsp_hover,mcp__ide_lsp__lsp_definition"
+  allowed_tools+=",mcp__ide_lsp__lsp_references,mcp__ide_lsp__lsp_diagnostics"
+  allowed_tools+=",mcp__ide_lsp__lsp_symbols,mcp__ide_lsp__lsp_workspace_symbols"
 
   # Start the agent in the background
+  # --allowedTools alone restricts to read-only tools; listed tools auto-execute in -p mode
+  # Unset CLAUDECODE to allow nested Claude Code sessions
   (
-    claude -p "$prompt" --dangerously-skip-permissions --allowedTools "$allowed_tools" \
+    unset CLAUDECODE
+    claude -p "$prompt" --allowedTools "$allowed_tools" \
       > "$dir/output.txt" 2>"$dir/stderr.txt"
     echo $? > "$dir/exit_code"
   ) &
@@ -243,5 +244,5 @@ case "$cmd" in
   log)   cmd_log "$@" ;;
   kill)  cmd_kill "$@" ;;
   count) cmd_count ;;
-  *)     usage ;;
+  *)     cmd_run "$cmd" "$@" ;;
 esac
