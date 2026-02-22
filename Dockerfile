@@ -6,7 +6,9 @@ FROM node:22
 ARG TZ
 ENV TZ="$TZ"
 
-ARG CLAUDE_CODE_VERSION=2.1.42
+ARG RUNTIME=claude
+ARG RUNTIME_VERSION=2.1.42
+ARG CLAUDE_CODE_VERSION=${RUNTIME_VERSION}
 
 # Install basic development tools
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -103,7 +105,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=go-sdk /usr/local/go /usr/local/go
 ENV PATH=$PATH:/usr/local/go/bin:/home/node/go/bin
 
-# Install Claude Code via native installer
+# Install coding assistant runtime (conditional on RUNTIME arg)
 RUN mkdir -p /usr/local/share/npm-global && \
     chown -R node:node /usr/local/share/npm-global
 
@@ -112,7 +114,17 @@ ENV PATH=/home/node/.local/bin:$PATH
 ENV NPM_CONFIG_PREFIX=/usr/local/share/npm-global
 ENV PATH=$PATH:/usr/local/share/npm-global/bin
 ENV DISABLE_AUTOUPDATER=1
-RUN curl -fsSL https://claude.ai/install.sh | bash -s ${CLAUDE_CODE_VERSION}
+RUN if [ "$RUNTIME" = "claude" ]; then \
+      curl -fsSL https://claude.ai/install.sh | bash -s ${RUNTIME_VERSION}; \
+    elif [ "$RUNTIME" = "codex" ]; then \
+      npm install -g @openai/codex@${RUNTIME_VERSION}; \
+    elif [ "$RUNTIME" = "opencode" ]; then \
+      GOPATH=/home/node/go go install github.com/opencode-ai/opencode@${RUNTIME_VERSION}; \
+    elif [ "$RUNTIME" = "amp" ]; then \
+      npm install -g @anthropic/amp@${RUNTIME_VERSION}; \
+    else \
+      curl -fsSL https://claude.ai/install.sh | bash -s ${RUNTIME_VERSION}; \
+    fi
 
 # Install TypeScript/Go language tools and MCP dependencies
 RUN npm install -g typescript typescript-language-server @modelcontextprotocol/sdk vscode-languageserver-protocol vscode-jsonrpc && \
@@ -138,13 +150,15 @@ RUN git config --global url."https://github.com/".insteadOf "git@github.com:" &&
     git config --global url."https://github.com/".insteadOf "ssh://git@github.com/" && \
     git config --global init.templateDir /usr/local/share/git-core/templates
 
-# Configure Beads hooks, commands, IDE tools, and MCP servers for Claude Code
-RUN bd setup claude && \
-    mkdir -p /home/node/.claude/commands /home/node/.claude/hooks /home/node/.claude/mcp && \
-    curl -sL "https://raw.githubusercontent.com/steveyegge/beads/main/integrations/claude-code/commands/plan-to-beads.md" \
-      -o /home/node/.claude/commands/plan-to-beads.md && \
-    jq '. + {"permissions": {"allow": ((.permissions.allow // []) + ["Bash(bd:*)", "Bash(agent:*)"])}, "hooks": {"PostToolUse": [{"matcher": "Edit|Write", "hooks": [{"type": "command", "command": "/home/node/.claude/hooks/auto-diagnostics.sh", "timeout": 30}]}]}, "mcpServers": {"ide-tools": {"command": "node", "args": ["/home/node/.claude/mcp/ide-tools.mjs"]}, "ide-lsp": {"command": "node", "args": ["/home/node/.claude/mcp/ide-lsp.mjs"]}}, "statusLine": {"type": "command", "command": "/home/node/.claude/hooks/statusline.sh", "padding": 2}}' /home/node/.claude/settings.json > /tmp/settings.json && \
-    mv /tmp/settings.json /home/node/.claude/settings.json
+# Configure Beads hooks, commands, IDE tools, and MCP servers (Claude Code only)
+RUN if [ "$RUNTIME" = "claude" ]; then \
+      bd setup claude && \
+      mkdir -p /home/node/.claude/commands /home/node/.claude/hooks /home/node/.claude/mcp && \
+      curl -sL "https://raw.githubusercontent.com/steveyegge/beads/main/integrations/claude-code/commands/plan-to-beads.md" \
+        -o /home/node/.claude/commands/plan-to-beads.md && \
+      jq '. + {"permissions": {"allow": ((.permissions.allow // []) + ["Bash(bd:*)", "Bash(agent:*)"])}, "hooks": {"PostToolUse": [{"matcher": "Edit|Write", "hooks": [{"type": "command", "command": "/home/node/.claude/hooks/auto-diagnostics.sh", "timeout": 30}]}]}, "mcpServers": {"ide-tools": {"command": "node", "args": ["/home/node/.claude/mcp/ide-tools.mjs"]}, "ide-lsp": {"command": "node", "args": ["/home/node/.claude/mcp/ide-lsp.mjs"]}}, "statusLine": {"type": "command", "command": "/home/node/.claude/hooks/statusline.sh", "padding": 2}}' /home/node/.claude/settings.json > /tmp/settings.json && \
+      mv /tmp/settings.json /home/node/.claude/settings.json; \
+    fi
 
 # Install tool proxy wrapper scripts and static token
 USER root
