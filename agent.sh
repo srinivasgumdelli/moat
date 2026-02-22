@@ -21,7 +21,7 @@ EOF
 }
 
 gen_id() {
-  head -c 4 /dev/urandom | xxd -p
+  head -c 4 /dev/urandom | od -A n -t x1 | tr -d ' \n'
 }
 
 resolve_id() {
