@@ -29,20 +29,8 @@ if [ -n "$task_title" ]; then
   parts+=("$task_title")
 fi
 
-# Running agent count
-agent_count=0
-if [ -d /tmp/moat-agents ]; then
-  for dir in /tmp/moat-agents/*/; do
-    [ -d "$dir" ] || continue
-    meta="$dir/meta.json"
-    [ -f "$meta" ] || continue
-    pid=$(jq -r '.pid' "$meta" 2>/dev/null) || continue
-    status=$(jq -r '.status' "$meta" 2>/dev/null) || continue
-    if [ "$status" = "running" ] && kill -0 "$pid" 2>/dev/null; then
-      agent_count=$((agent_count + 1))
-    fi
-  done
-fi
+# Running agent count (via tool-proxy)
+agent_count=$(agent count 2>/dev/null || echo "0")
 if [ "$agent_count" -gt 0 ]; then
   parts+=("${agent_count} agents")
 fi

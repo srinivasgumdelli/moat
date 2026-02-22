@@ -142,7 +142,7 @@ Moat is designed to be **fail-closed** — if a process ignores proxy settings o
 
 ## Background agents
 
-Spawn read-only Claude Code agents that run in the background — research code, run tests, analyze patterns — without blocking your main session:
+Spawn read-only Claude Code agents that run in isolated Docker containers — research code, run tests, analyze patterns — without blocking your main session:
 
 ```bash
 agent run "run all tests and summarize failures"
@@ -150,9 +150,11 @@ agent run --name research "explain the auth flow"
 agent list                    # see all agents
 agent log <id>                # view output
 agent kill <id>               # terminate
+agent results                 # get all completed output
+agent wait <id>               # block until done
 ```
 
-Agents are read-only by default (no file writes), so they can't conflict with your main session. The status line shows running agent count alongside model, task, context usage, and cost.
+Each agent runs in its own `moat-agent` container on the same sandbox network, with the workspace mounted read-only. Agents are managed by the host-side tool proxy and cleaned up automatically on `moat down`. The status line shows running agent count alongside task, context usage, and cost.
 
 ## IDE features
 
@@ -315,8 +317,10 @@ moat/
 │   ├── init-config.mjs           # Interactive .moat.yml creation from detected deps
 │   └── claude-md.mjs             # Copy global CLAUDE.md into container
 ├── install.sh                    # Unified installer (curl-pipeable, auto-detects context)
-├── tool-proxy.mjs                # Host-side proxy server with allowlists
-├── Dockerfile                    # Container image
+├── tool-proxy.mjs                # Host-side proxy server with allowlists + agent management
+├── Dockerfile                    # Container image (devcontainer)
+├── Dockerfile.agent              # Minimal agent container image
+├── agent-entrypoint.sh           # Agent container entrypoint (reads MOAT_AGENT_PROMPT)
 ├── docker-compose.yml            # squid + devcontainer services
 ├── docker-compose.services.yml   # Per-project sidecar services (auto-generated)
 ├── docker-compose.extra-dirs.yml # Extra directory mounts (auto-generated)

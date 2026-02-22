@@ -5,8 +5,10 @@ These are instructions for working on the Moat codebase itself.
 ## Architecture
 - `moat.mjs` — entry point: argument routing, main flow, cleanup
 - `lib/` — module per concern (cli, compose, container, proxy, etc.)
-- `tool-proxy.mjs` — host-side proxy server with IaC allowlists
-- Container image built from `Dockerfile` with squid proxy for network isolation
+- `tool-proxy.mjs` — host-side proxy server with IaC allowlists + agent container management
+- `Dockerfile` — main devcontainer image with squid proxy for network isolation
+- `Dockerfile.agent` + `agent-entrypoint.sh` — minimal agent container image (read-only workspace)
+- `agent.sh` — in-container HTTP client for agent management (talks to tool-proxy)
 
 ## Testing
 - `test.sh` — end-to-end test suite (run from host)

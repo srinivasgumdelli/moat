@@ -233,8 +233,26 @@ process.on('exit', () => {
 });
 process.on('SIGTERM', () => process.exit(0));
 
-// Start or reuse tool proxy
+// Build agent image if missing
 ensureTokenInRepo();
+try {
+  execSync('docker image inspect moat-agent', { stdio: 'pipe' });
+} catch {
+  log('Building agent image...');
+  const agentVersion = process.env.CLAUDE_CODE_VERSION || '2.1.42';
+  const buildResult = spawnSync('docker', [
+    'build', '-t', 'moat-agent',
+    '--build-arg', `CLAUDE_CODE_VERSION=${agentVersion}`,
+    '-f', join(REPO_DIR, 'Dockerfile.agent'),
+    REPO_DIR
+  ], { stdio: 'inherit' });
+  if (buildResult.status !== 0) {
+    err('Failed to build agent image');
+    process.exit(1);
+  }
+}
+
+// Start or reuse tool proxy
 const proxyOk = await startProxy(REPO_DIR, DATA_DIR);
 if (!proxyOk) {
   process.exit(1);

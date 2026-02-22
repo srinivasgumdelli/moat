@@ -6,7 +6,8 @@
 
 import http from 'node:http';
 import { spawn, execSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { randomBytes } from 'node:crypto';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -271,6 +272,81 @@ function sendJson(res, statusCode, data) {
   res.end(JSON.stringify(data));
 }
 
+// --- Agent management helpers ---
+
+function generateAgentId() {
+  return randomBytes(4).toString('hex');
+}
+
+function resolveAgentId(wsHash, partial) {
+  const agentsDir = join(WORKSPACES_DIR, wsHash, 'agents');
+  if (!existsSync(agentsDir)) return { error: 'No agents found.' };
+
+  let entries;
+  try {
+    entries = readdirSync(agentsDir, { withFileTypes: true });
+  } catch {
+    return { error: 'No agents found.' };
+  }
+
+  const matches = entries
+    .filter(e => e.isDirectory() && e.name.startsWith(partial))
+    .map(e => e.name);
+
+  if (matches.length === 0) return { error: `No agent matching '${partial}'.` };
+  if (matches.length > 1) return { error: `Ambiguous ID '${partial}' — matches: ${matches.join(', ')}` };
+  return { id: matches[0] };
+}
+
+function getAgentMeta(wsHash, agentId) {
+  const metaPath = join(WORKSPACES_DIR, wsHash, 'agents', agentId, 'meta.json');
+  try {
+    return JSON.parse(readFileSync(metaPath, 'utf-8'));
+  } catch {
+    return null;
+  }
+}
+
+function saveAgentMeta(wsHash, agentId, meta) {
+  const dir = join(WORKSPACES_DIR, wsHash, 'agents', agentId);
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(join(dir, 'meta.json'), JSON.stringify(meta, null, 2) + '\n');
+}
+
+async function getAgentContainerStatus(agentId) {
+  const containerName = `moat-agent-${agentId}`;
+  const result = await executeCommand('docker', [
+    'inspect', containerName,
+    '--format', '{{.State.Status}}:{{.State.ExitCode}}'
+  ]);
+  if (!result.success) return { exists: false };
+  const parts = result.stdout.trim().split(':');
+  return { exists: true, status: parts[0], exitCode: parseInt(parts[1], 10) };
+}
+
+async function getAgentLogs(agentId) {
+  const containerName = `moat-agent-${agentId}`;
+  const result = await executeCommand('docker', ['logs', containerName]);
+  return result.success ? result.stdout : result.stderr;
+}
+
+function listAgentIds(wsHash) {
+  const agentsDir = join(WORKSPACES_DIR, wsHash, 'agents');
+  if (!existsSync(agentsDir)) return [];
+  try {
+    return readdirSync(agentsDir, { withFileTypes: true })
+      .filter(e => e.isDirectory())
+      .map(e => e.name);
+  } catch {
+    return [];
+  }
+}
+
+function removeAgentMeta(wsHash, agentId) {
+  const dir = join(WORKSPACES_DIR, wsHash, 'agents', agentId);
+  try { rmSync(dir, { recursive: true, force: true }); } catch {}
+}
+
 const server = http.createServer(async (req, res) => {
   if (!verifyAuth(req)) {
     sendJson(res, 401, { success: false, error: 'Unauthorized' });
@@ -502,6 +578,264 @@ const server = http.createServer(async (req, res) => {
       process.stderr.write(`[tool-proxy] mcp/${serverName} ERROR: ${e.message}\n`);
       sendJson(res, 502, { success: false, error: `MCP proxy error: ${e.message}` });
     }
+    return;
+  }
+
+  // --- Agent management endpoints ---
+  if (req.url.startsWith('/agent/')) {
+    const parsedUrl = new URL(req.url, 'http://localhost');
+    const agentPath = parsedUrl.pathname;
+    const wsHashParam = parsedUrl.searchParams.get('workspace_hash') || '';
+
+    // POST /agent/spawn
+    if (agentPath === '/agent/spawn' && req.method === 'POST') {
+      const body = await readBody(req);
+      if (!body || !body.prompt) {
+        sendJson(res, 400, { success: false, error: 'prompt required' });
+        return;
+      }
+      const wsHash = body.workspace_hash;
+      if (!wsHash) {
+        sendJson(res, 400, { success: false, error: 'workspace_hash required' });
+        return;
+      }
+
+      const mappings = getMappingsForHash(wsHash);
+      const hostWorkspace = mappings['/workspace'];
+      if (!hostWorkspace) {
+        sendJson(res, 400, { success: false, error: 'No workspace mapping found — session may have ended.' });
+        return;
+      }
+
+      const id = generateAgentId();
+      const name = body.name || `agent-${id.slice(0, 4)}`;
+      const network = `moat-${wsHash}_sandbox`;
+      const tools = body.tools || 'Read,Grep,Glob,Task,WebFetch,WebSearch';
+
+      const dockerArgs = [
+        'run', '--detach',
+        '--name', `moat-agent-${id}`,
+        '--network', network,
+        '--label', 'moat.agent=true',
+        '--label', `moat.agent.id=${id}`,
+        '--label', `moat.workspace_hash=${wsHash}`,
+        '--memory', '4g', '--cpus', '2',
+        '--add-host', 'host.docker.internal:host-gateway',
+        '--env', `HTTP_PROXY=http://squid:3128`,
+        '--env', `HTTPS_PROXY=http://squid:3128`,
+        '--env', `http_proxy=http://squid:3128`,
+        '--env', `https_proxy=http://squid:3128`,
+        '--env', `NO_PROXY=localhost,127.0.0.1`,
+        '--env', `no_proxy=localhost,127.0.0.1`,
+        '--env', `ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY || ''}`,
+        '--env', `MOAT_WORKSPACE_HASH=${wsHash}`,
+        '--env', `MOAT_AGENT_PROMPT=${body.prompt}`,
+        '--env', `MOAT_AGENT_TOOLS=${tools}`,
+        '--mount', `type=bind,src=${hostWorkspace},dst=/workspace,readonly`,
+        'moat-agent',
+      ];
+
+      const result = await executeCommand('docker', dockerArgs);
+      if (!result.success) {
+        process.stderr.write(`[tool-proxy] agent/spawn FAILED: ${result.stderr}\n`);
+        sendJson(res, 500, { success: false, error: result.stderr.trim() });
+        return;
+      }
+
+      const meta = {
+        id,
+        name,
+        prompt: body.prompt,
+        status: 'running',
+        started_at: new Date().toISOString(),
+      };
+      saveAgentMeta(wsHash, id, meta);
+
+      process.stderr.write(`[tool-proxy] agent/spawn ${id} (${name})\n`);
+      sendJson(res, 200, { success: true, id, name });
+      return;
+    }
+
+    // GET /agent/list
+    if (agentPath === '/agent/list' && req.method === 'GET') {
+      if (!wsHashParam) {
+        sendJson(res, 400, { success: false, error: 'workspace_hash required' });
+        return;
+      }
+
+      const agentIds = listAgentIds(wsHashParam);
+      const agents = [];
+
+      for (const agentId of agentIds) {
+        const meta = getAgentMeta(wsHashParam, agentId);
+        if (!meta) continue;
+
+        // Reconcile status with Docker
+        if (meta.status === 'running') {
+          const container = await getAgentContainerStatus(agentId);
+          if (!container.exists || container.status === 'exited') {
+            meta.status = (container.exitCode === 0) ? 'done' : 'failed';
+            meta.exit_code = container.exitCode;
+            saveAgentMeta(wsHashParam, agentId, meta);
+          }
+        }
+
+        agents.push(meta);
+      }
+
+      sendJson(res, 200, { success: true, agents });
+      return;
+    }
+
+    // GET /agent/log/<id>
+    const logMatch = agentPath.match(/^\/agent\/log\/(.+)$/);
+    if (logMatch && req.method === 'GET') {
+      if (!wsHashParam) {
+        sendJson(res, 400, { success: false, error: 'workspace_hash required' });
+        return;
+      }
+
+      const resolved = resolveAgentId(wsHashParam, logMatch[1]);
+      if (resolved.error) {
+        sendJson(res, 404, { success: false, error: resolved.error });
+        return;
+      }
+
+      const log = await getAgentLogs(resolved.id);
+      sendJson(res, 200, { success: true, log });
+      return;
+    }
+
+    // POST /agent/kill/<id>
+    const killMatch = agentPath.match(/^\/agent\/kill\/(.+)$/);
+    if (killMatch && req.method === 'POST') {
+      const body = await readBody(req);
+      const wsHash = body?.workspace_hash;
+      if (!wsHash) {
+        sendJson(res, 400, { success: false, error: 'workspace_hash required' });
+        return;
+      }
+
+      const target = killMatch[1];
+
+      if (target === '--all') {
+        const agentIds = listAgentIds(wsHash);
+        let killed = 0;
+        for (const agentId of agentIds) {
+          const meta = getAgentMeta(wsHash, agentId);
+          if (!meta || meta.status !== 'running') continue;
+          const containerName = `moat-agent-${agentId}`;
+          await executeCommand('docker', ['rm', '-f', containerName]);
+          meta.status = 'killed';
+          saveAgentMeta(wsHash, agentId, meta);
+          killed++;
+        }
+        process.stderr.write(`[tool-proxy] agent/kill --all (${killed} killed)\n`);
+        sendJson(res, 200, { success: true, message: `Killed ${killed} agent(s).` });
+        return;
+      }
+
+      const resolved = resolveAgentId(wsHash, target);
+      if (resolved.error) {
+        sendJson(res, 404, { success: false, error: resolved.error });
+        return;
+      }
+
+      const containerName = `moat-agent-${resolved.id}`;
+      await executeCommand('docker', ['rm', '-f', containerName]);
+      const meta = getAgentMeta(wsHash, resolved.id);
+      if (meta) {
+        meta.status = 'killed';
+        saveAgentMeta(wsHash, resolved.id, meta);
+      }
+
+      process.stderr.write(`[tool-proxy] agent/kill ${resolved.id}\n`);
+      sendJson(res, 200, { success: true, message: `Killed ${resolved.id}.` });
+      return;
+    }
+
+    // GET /agent/results
+    if (agentPath === '/agent/results' && req.method === 'GET') {
+      if (!wsHashParam) {
+        sendJson(res, 400, { success: false, error: 'workspace_hash required' });
+        return;
+      }
+
+      const agentIds = listAgentIds(wsHashParam);
+      const results = [];
+
+      for (const agentId of agentIds) {
+        const meta = getAgentMeta(wsHashParam, agentId);
+        if (!meta) continue;
+
+        // Reconcile status
+        if (meta.status === 'running') {
+          const container = await getAgentContainerStatus(agentId);
+          if (!container.exists || container.status === 'exited') {
+            meta.status = (container.exitCode === 0) ? 'done' : 'failed';
+            meta.exit_code = container.exitCode;
+          }
+        }
+
+        if (meta.status === 'done' || meta.status === 'failed') {
+          const log = await getAgentLogs(agentId);
+          results.push({ ...meta, log });
+
+          // Clean up container and metadata
+          await executeCommand('docker', ['rm', '-f', `moat-agent-${agentId}`]);
+          removeAgentMeta(wsHashParam, agentId);
+        }
+      }
+
+      process.stderr.write(`[tool-proxy] agent/results -> ${results.length} completed\n`);
+      sendJson(res, 200, { success: true, results });
+      return;
+    }
+
+    // GET /agent/wait/<id>
+    const waitMatch = agentPath.match(/^\/agent\/wait\/(.+)$/);
+    if (waitMatch && req.method === 'GET') {
+      if (!wsHashParam) {
+        sendJson(res, 400, { success: false, error: 'workspace_hash required' });
+        return;
+      }
+
+      const resolved = resolveAgentId(wsHashParam, waitMatch[1]);
+      if (resolved.error) {
+        sendJson(res, 404, { success: false, error: resolved.error });
+        return;
+      }
+
+      // Poll until container exits (timeout 5 min)
+      const timeout = 300000;
+      const start = Date.now();
+      while (Date.now() - start < timeout) {
+        const container = await getAgentContainerStatus(resolved.id);
+        if (!container.exists) {
+          sendJson(res, 200, { success: true, status: 'not_found', log: '' });
+          return;
+        }
+        if (container.status === 'exited') {
+          const log = await getAgentLogs(resolved.id);
+          const meta = getAgentMeta(wsHashParam, resolved.id);
+          const status = (container.exitCode === 0) ? 'done' : 'failed';
+          if (meta) {
+            meta.status = status;
+            meta.exit_code = container.exitCode;
+            saveAgentMeta(wsHashParam, resolved.id, meta);
+          }
+          process.stderr.write(`[tool-proxy] agent/wait ${resolved.id} -> ${status}\n`);
+          sendJson(res, 200, { success: true, status, exit_code: container.exitCode, log });
+          return;
+        }
+        await new Promise(r => setTimeout(r, 2000));
+      }
+
+      sendJson(res, 200, { success: false, error: 'Timeout waiting for agent.' });
+      return;
+    }
+
+    sendJson(res, 404, { success: false, error: 'Unknown agent endpoint' });
     return;
   }
 
