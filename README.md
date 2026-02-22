@@ -59,7 +59,6 @@ moat                                        # full access (workspace = cwd)
 moat ~/Projects/myapp                       # target a specific directory
 moat --add-dir ~/Projects/shared-lib        # mount extra directories
 moat ~/Projects/myapp --add-dir ~/lib-a --add-dir ~/lib-b
-moat plan                                   # read-only tools only (no Write, Edit, Bash)
 moat init                                   # scan deps, create .moat.yml interactively
 moat attach ~/Projects/shared-lib           # live-sync a dir into a running session
 moat detach shared-lib                      # stop syncing
@@ -138,7 +137,6 @@ Moat is designed to be **fail-closed** — if a process ignores proxy settings o
 
 **Recommendations:**
 - Review `.moat.yml` domains — only whitelist what your project needs
-- Use `moat plan` for research/analysis phases where no writes are needed
 - Run `moat doctor` to verify your setup is correctly configured
 - Keep Docker Desktop and your host kernel updated (relevant when `docker: true`)
 

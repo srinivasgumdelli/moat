@@ -31,21 +31,6 @@ moat ~/Projects/myapp --resume     # resume previous session
 moat . --model sonnet              # pass model flag
 ```
 
-### `moat plan` — Read-only mode
-
-```bash
-moat plan [workspace] [--add-dir <path>...] [claude_args...]
-```
-
-Launches Claude Code with only read-only tools enabled: `Read`, `Grep`, `Glob`, `Task`, `WebFetch`, `WebSearch`. Write, Edit, Bash, and all other mutating tools are blocked.
-
-Use this for research and planning phases where you want Claude to analyze code without making changes.
-
-```bash
-moat plan                         # read-only, workspace = cwd
-moat plan ~/Projects/myapp        # read-only on specific dir
-```
-
 ### `moat attach <dir>` — Live-sync a directory into a running session
 
 ```bash
@@ -155,7 +140,7 @@ When you run `moat`:
 4. Tool proxy starts on the host at `127.0.0.1:9876`
 5. Container is checked — reused if workspace and mounts match, recreated otherwise
 6. `devcontainer up` starts squid (forward proxy) + devcontainer
-7. `~/.claude/CLAUDE.md` is copied into the container (if it exists)
+7. Base CLAUDE.md is restored and `~/.claude/CLAUDE.md` is appended (if it exists)
 8. Claude Code launches with `--dangerously-skip-permissions`
 9. On exit (or Ctrl-C), the proxy is stopped and Mutagen sessions are terminated
 
@@ -412,7 +397,9 @@ The repo itself lives at `~/.moat` (curl install) or wherever you cloned it.
 
 ### Global CLAUDE.md
 
-If `~/.claude/CLAUDE.md` exists on the host, Moat automatically copies it into the container at `/home/node/.claude/CLAUDE.md` after the container starts. This gives Claude Code access to your global instructions (preferences, conventions, etc.) inside the sandbox.
+Moat bakes a base set of instructions into the container at `/home/node/.claude/CLAUDE.md` that enforce a plan-first workflow (explore, plan, create beads tasks, implement, verify).
+
+If `~/.claude/CLAUDE.md` exists on the host, its content is **appended** to the base rules on container start. This gives Claude Code both the enforced workflow rules and your personal global instructions (preferences, conventions, etc.) inside the sandbox. The base rules are always restored from an immutable copy before appending, so container reuse never duplicates content.
 
 ## Troubleshooting
 

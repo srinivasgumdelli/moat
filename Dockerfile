@@ -169,6 +169,8 @@ RUN chmod +x /usr/local/bin/verify.sh
 COPY --chown=node:node auto-diagnostics.sh /home/node/.claude/hooks/
 COPY --chown=node:node ide-tools.mjs /home/node/.claude/mcp/
 COPY --chown=node:node ide-lsp.mjs /home/node/.claude/mcp/
+COPY --chown=node:node moat-claude.md /home/node/.claude/CLAUDE.md
+COPY --chown=node:node moat-claude.md /home/node/.claude/CLAUDE.md.base
 RUN chmod +x /home/node/.claude/hooks/auto-diagnostics.sh
 
 USER node

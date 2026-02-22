@@ -1,15 +1,18 @@
-# Moat — Claude Code Instructions
+# Moat — Project Development Instructions
 
-## Workflow
-- Always commit and push changes without asking.
-- Always use feature branches — never push directly to main.
-- Open a PR for all changes, even small fixes.
-- Use smaller, logically grouped commits.
-- Use `bd` (beads) for task tracking. Run `bd init` if `.beads/` doesn't exist. Create tasks with `bd add`, update status with `bd set`, and check tasks with `bd list`.
+These are instructions for working on the Moat codebase itself.
 
-## IDE Tools
-- Auto-diagnostics run after every Edit/Write (eslint for TS/JS, ruff for Python, go vet for Go).
-- Use `run_diagnostics` for full type-checking (tsc, pyright, golangci-lint).
-- Use `run_tests` for structured test output instead of raw CLI.
-- Use `lsp_hover`, `lsp_definition`, `lsp_references`, `lsp_symbols` for code intelligence.
-- Language servers start lazily — first LSP call for a language may take a few seconds.
+## Architecture
+- `moat.mjs` — entry point: argument routing, main flow, cleanup
+- `lib/` — module per concern (cli, compose, container, proxy, etc.)
+- `tool-proxy.mjs` — host-side proxy server with IaC allowlists
+- Container image built from `Dockerfile` with squid proxy for network isolation
+
+## Testing
+- `test.sh` — end-to-end test suite (run from host)
+- `verify.sh` — post-start verification (runs inside container)
+
+## Conventions
+- Pure ESM (`.mjs` extension, `import`/`export`)
+- No build step — scripts run directly with Node
+- Prefer `runCapture` / `runInherit` from `lib/exec.mjs` over raw `child_process`
