@@ -116,6 +116,8 @@ See [docs/usage.md](docs/usage.md) for the full usage guide.
 | Container rebuild on change | Stale state from previous workspace |
 | Agent container isolation | Background agents run in separate containers with workspace mounted read-only |
 | Podman (rootless, daemonless) | No host socket, containers inherit squid, no host filesystem access |
+| Secrets scanning | Detects leaked credentials in tool-proxy request/response flow (11 built-in patterns) |
+| Audit logging | Structured event trail for every tool execution, block, and secret detection |
 
 ### Security considerations
 
@@ -192,6 +194,35 @@ Language servers (`typescript-language-server`, `pyright`, `gopls`) start lazily
 **kubectl** (read-only): `get`, `describe`, `logs`, `top`, `diff`, `explain` are allowed. `apply`, `delete`, `create`, `exec`, `patch` are blocked.
 
 **AWS CLI** (read-only): Actions starting with `describe`, `list`, `get` are allowed. Actions starting with `create`, `delete`, `terminate`, `put`, `update`, `run` are blocked.
+
+## Secrets scanning
+
+The tool proxy scans all proxied commands for leaked credentials — both in arguments and output. 11 built-in patterns cover AWS keys, API key assignments, private keys, GitHub/Anthropic/Slack/OpenAI tokens, GCP service accounts, JWTs, and password assignments.
+
+- **Warn mode** (default): logs a warning and records an audit event
+- **Block mode** (`MOAT_SECRETS_BLOCK=1`): blocks the command entirely
+
+Add custom patterns per-project via `.moat.yml`:
+
+```yaml
+secrets:
+  patterns:
+    - name: my-internal-token
+      regex: "MYCO_[A-Za-z0-9]{32}"
+```
+
+## Audit logging
+
+Every tool-proxy interaction is logged to `audit.jsonl` per workspace. View logs with:
+
+```bash
+moat audit                               # list workspaces with logs
+moat audit <hash> --type tool            # filter events
+moat audit <hash> --tail                 # live-follow mode (tail -f)
+moat audit <hash> --json                 # machine-readable output
+```
+
+Logs rotate automatically at 5 MB (configurable via `MOAT_AUDIT_MAX_SIZE`). See [docs/usage.md](docs/usage.md#audit-logging) for full details.
 
 ## Per-project configuration
 
@@ -317,6 +348,11 @@ moat/
 │   ├── update.mjs                # update subcommand
 │   ├── down.mjs                  # down subcommand
 │   ├── attach.mjs                # attach/detach subcommands
+│   ├── audit.mjs                 # Audit logging: createAuditLogger, readAuditLog, rotation
+│   ├── audit-view.mjs            # `moat audit` subcommand: list, view, --tail
+│   ├── secrets.mjs               # Secrets scanning: patterns, scanForSecrets, loadCustomPatterns
+│   ├── runtimes/                 # Pluggable runtime configs (claude, codex, opencode, amp)
+│   │   └── index.mjs             # Runtime registry: getRuntime, listRuntimes, resolveRuntimeName
 │   ├── detect.mjs                # Dependency scanner (package.json, go.mod, etc.)
 │   ├── init-config.mjs           # Interactive .moat.yml creation from detected deps
 │   └── claude-md.mjs             # Copy global CLAUDE.md into container
