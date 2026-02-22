@@ -25,6 +25,7 @@ if (!DATA_DIR) {
 }
 
 const WORKSPACES_DIR = join(DATA_DIR, 'workspaces');
+const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10 MB
 
 // Multi-workspace path mappings: { hash: { "/workspace": hostPath, ... } }
 let workspaceMappings = {};
@@ -238,9 +239,14 @@ function executeCommand(command, args, options = {}) {
 }
 
 function readBody(req) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let data = '';
-    req.on('data', (chunk) => { data += chunk; });
+    let size = 0;
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > MAX_BODY_SIZE) { req.destroy(); reject(new Error('Body too large')); return; }
+      data += chunk;
+    });
     req.on('end', () => {
       try { resolve(JSON.parse(data)); }
       catch { resolve(null); }
@@ -249,9 +255,14 @@ function readBody(req) {
 }
 
 function readRawBody(req) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const chunks = [];
-    req.on('data', (chunk) => { chunks.push(chunk); });
+    let size = 0;
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > MAX_BODY_SIZE) { req.destroy(); reject(new Error('Body too large')); return; }
+      chunks.push(chunk);
+    });
     req.on('end', () => { resolve(Buffer.concat(chunks)); });
   });
 }
@@ -355,6 +366,13 @@ const server = http.createServer(async (req, res) => {
 
   if (req.url === '/health' && req.method === 'GET') {
     sendJson(res, 200, { success: true });
+    return;
+  }
+
+  // Reject oversized requests early via content-length header
+  const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+  if (contentLength > MAX_BODY_SIZE) {
+    sendJson(res, 413, { success: false, error: 'Request body too large' });
     return;
   }
 
