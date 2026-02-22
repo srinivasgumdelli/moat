@@ -6,8 +6,9 @@
 
 import http from 'node:http';
 import { spawn, execSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, rmSync, unlinkSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -618,6 +619,12 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
+      const apiKey = process.env.ANTHROPIC_API_KEY || '';
+      if (!apiKey) {
+        sendJson(res, 400, { success: false, error: 'ANTHROPIC_API_KEY not set on host — cannot spawn agent.' });
+        return;
+      }
+
       const mappings = getMappingsForHash(wsHash);
       const hostWorkspace = mappings['/workspace'];
       if (!hostWorkspace) {
@@ -630,6 +637,10 @@ const server = http.createServer(async (req, res) => {
       const network = `moat-${wsHash}_sandbox`;
       const tools = body.tools || 'Read,Grep,Glob,Task,WebFetch,WebSearch';
 
+      // Write API key to a temp env file (avoids exposing it in docker inspect / /proc)
+      const envFile = join(tmpdir(), `moat-agent-${id}.env`);
+      writeFileSync(envFile, `ANTHROPIC_API_KEY=${apiKey}\n`, { mode: 0o600 });
+
       const dockerArgs = [
         'run', '--detach',
         '--name', `moat-agent-${id}`,
@@ -639,13 +650,13 @@ const server = http.createServer(async (req, res) => {
         '--label', `moat.workspace_hash=${wsHash}`,
         '--memory', '4g', '--cpus', '2',
         '--add-host', 'host.docker.internal:host-gateway',
+        '--env-file', envFile,
         '--env', `HTTP_PROXY=http://squid:3128`,
         '--env', `HTTPS_PROXY=http://squid:3128`,
         '--env', `http_proxy=http://squid:3128`,
         '--env', `https_proxy=http://squid:3128`,
         '--env', `NO_PROXY=localhost,127.0.0.1`,
         '--env', `no_proxy=localhost,127.0.0.1`,
-        '--env', `ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY || ''}`,
         '--env', `MOAT_WORKSPACE_HASH=${wsHash}`,
         '--env', `MOAT_AGENT_PROMPT=${body.prompt}`,
         '--env', `MOAT_AGENT_TOOLS=${tools}`,
@@ -654,6 +665,8 @@ const server = http.createServer(async (req, res) => {
       ];
 
       const result = await executeCommand('docker', dockerArgs);
+      // Clean up temp env file immediately after docker reads it
+      try { unlinkSync(envFile); } catch {}
       if (!result.success) {
         process.stderr.write(`[tool-proxy] agent/spawn FAILED: ${result.stderr}\n`);
         sendJson(res, 500, { success: false, error: result.stderr.trim() });
