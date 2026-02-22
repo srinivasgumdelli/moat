@@ -8,14 +8,10 @@ AGENT_DIR="/tmp/moat-agents"
 
 usage() {
   cat <<'EOF'
-Usage: agent <command> [options]
-
-Commands:
-  run [--name <name>] "prompt"   Spawn a read-only background agent
-  list                           Show all agents (id, name, pid, status, prompt)
-  log <id>                       Show agent output (supports partial ID)
-  kill <id>                      Terminate an agent
-  kill --all                     Terminate all agents
+Usage: agent [--name <name>] <prompt>       Spawn a background agent
+       agent list                           Show all agents
+       agent log <id>                       Show agent output
+       agent kill <id|--all>                Terminate agent(s)
 EOF
   exit 1
 }
@@ -70,7 +66,8 @@ check_status() {
 }
 
 cmd_run() {
-  local name="" prompt=""
+  local name=""
+  local -a words=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --name)
@@ -78,14 +75,15 @@ cmd_run() {
         shift 2
         ;;
       *)
-        prompt="$1"
+        words+=("$1")
         shift
         ;;
     esac
   done
 
+  local prompt="${words[*]}"
   if [ -z "$prompt" ]; then
-    echo "Usage: agent run [--name <name>] \"prompt\"" >&2
+    echo "Usage: agent [--name <name>] <prompt>" >&2
     exit 1
   fi
 
@@ -246,5 +244,5 @@ case "$cmd" in
   log)   cmd_log "$@" ;;
   kill)  cmd_kill "$@" ;;
   count) cmd_count ;;
-  *)     usage ;;
+  *)     cmd_run "$cmd" "$@" ;;
 esac
