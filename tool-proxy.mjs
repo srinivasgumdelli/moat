@@ -148,12 +148,32 @@ function validateKubectl(args) {
   return { allowed: true };
 }
 
-const AWS_BLOCKED_VERBS = new Set([
-  'create', 'delete', 'terminate', 'remove', 'put', 'update', 'run',
-  'start', 'stop', 'reboot', 'modify', 'release', 'deregister',
-  'revoke', 'disable', 'enable', 'attach', 'detach', 'associate',
-  'disassociate', 'import', 'export', 'invoke', 'publish', 'send',
-  'execute', 'cancel', 'reset', 'restore',
+// AWS: allowlist of read-only verb prefixes (safer than a blocklist)
+const AWS_ALLOWED_VERBS = new Set([
+  'describe', 'list', 'get', 'lookup', 'search', 'check', 'detect',
+  'estimate', 'forecast', 'preview', 'query', 'scan', 'select',
+  'test', 'validate', 'verify', 'batch-get', 'batch-describe',
+]);
+
+// AWS actions that are safe despite not matching allowed verb prefixes
+const AWS_ALLOWED_ACTIONS = new Set([
+  'sts get-caller-identity',
+  'sts get-session-token',
+  'sts get-access-key-info',
+  's3 ls',
+  's3 cp',               // read direction determined by args, but commonly needed
+  's3api head-object',
+  's3api head-bucket',
+  'iam generate-credential-report',
+  'ec2 wait',
+  'cloudwatch wait',
+  'logs tail',
+  'logs filter-log-events',
+  'logs start-query',     // starts an async query (read-only)
+  'logs stop-query',
+  'logs get-query-results',
+  'cloudformation detect-stack-drift',
+  'cloudformation detect-stack-resource-drift',
 ]);
 
 function validateAws(args) {
@@ -163,13 +183,16 @@ function validateAws(args) {
   if (nonFlagArgs.length < 2) return { allowed: true }; // just service name or help
   const service = nonFlagArgs[0];
   const action = nonFlagArgs[1];
-  // Allow sts get-caller-identity, s3 ls, s3api list-buckets, etc.
-  // Block based on the verb prefix of the action
-  const verb = action.split('-')[0];
-  if (AWS_BLOCKED_VERBS.has(verb)) {
-    return { allowed: false, reason: `aws ${service} ${action} is blocked by Moat (read-only mode)` };
+  // Check explicit service+action allowlist first
+  if (AWS_ALLOWED_ACTIONS.has(`${service} ${action}`)) {
+    return { allowed: true };
   }
-  return { allowed: true };
+  // Check verb prefix against allowed read-only verbs
+  const verb = action.split('-')[0];
+  if (AWS_ALLOWED_VERBS.has(verb)) {
+    return { allowed: true };
+  }
+  return { allowed: false, reason: `aws ${service} ${action} is blocked by Moat (read-only mode)` };
 }
 
 // Check if a path is a known container mount point
