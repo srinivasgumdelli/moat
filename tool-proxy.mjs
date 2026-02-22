@@ -6,7 +6,7 @@
 
 import http from 'node:http';
 import { spawn, execSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, rmSync, unlinkSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, rmSync, unlinkSync, appendFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
@@ -307,6 +307,19 @@ function sendJson(res, statusCode, data) {
   res.end(JSON.stringify(data));
 }
 
+// --- Audit logging helper ---
+
+function auditEmit(wsHash, type, payload = {}) {
+  if (!wsHash) return;
+  try {
+    const auditPath = join(WORKSPACES_DIR, wsHash, 'audit.jsonl');
+    const event = { ts: new Date().toISOString(), type, ...payload };
+    appendFileSync(auditPath, JSON.stringify(event) + '\n');
+  } catch {
+    // Non-fatal — never let audit logging break request handling
+  }
+}
+
 // --- Agent management helpers ---
 
 function generateAgentId() {
@@ -443,8 +456,11 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 400, { success: false, error: msg });
       return;
     }
+    const startTime = Date.now();
     const result = await executeCommand('gh', body.args, options);
+    const duration_ms = Date.now() - startTime;
     process.stderr.write(`[tool-proxy] gh ${body.args.join(' ')} -> exit ${result.exitCode}\n`);
+    auditEmit(wsHash, 'tool.execute', { endpoint: 'gh', args_summary: body.args.join(' '), exit_code: result.exitCode, duration_ms });
     sendJson(res, 200, result);
     return;
   }
@@ -475,8 +491,11 @@ const server = http.createServer(async (req, res) => {
     const ghToken = getGitHubToken();
     const env = {};
     if (ghToken) { env.GITHUB_TOKEN = ghToken; env.GH_TOKEN = ghToken; }
+    const startTime = Date.now();
     const result = await executeCommand('git', body.args, { cwd: hostCwd, env });
+    const duration_ms = Date.now() - startTime;
     process.stderr.write(`[tool-proxy] git ${body.args.join(' ')} in ${hostCwd} -> exit ${result.exitCode}\n`);
+    auditEmit(wsHash, 'tool.execute', { endpoint: 'git', args_summary: body.args.join(' '), exit_code: result.exitCode, duration_ms });
     sendJson(res, 200, result);
     return;
   }
@@ -489,20 +508,24 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const validation = validateTerraform(body.args);
+    const wsHash = body.workspace_hash || '';
     if (!validation.allowed) {
       process.stderr.write(`[tool-proxy] terraform ${body.args.join(' ')} BLOCKED (${validation.reason})\n`);
+      auditEmit(wsHash, 'tool.blocked', { endpoint: 'terraform', args_summary: body.args.join(' '), reason: validation.reason });
       sendJson(res, 200, { success: false, blocked: true, reason: validation.reason, stdout: '', stderr: validation.reason + '\n', exitCode: 126 });
       return;
     }
-    const wsHash = body.workspace_hash || '';
     const hostCwd = toHostPath(body.cwd, wsHash);
     if (!hostCwd || !existsSync(hostCwd)) {
       sendJson(res, 400, { success: false, error: `Directory not found: ${hostCwd}` });
       return;
     }
     const translatedArgs = translateArgPaths(body.args, wsHash);
+    const startTime = Date.now();
     const result = await executeCommand('terraform', translatedArgs, { cwd: hostCwd });
+    const duration_ms = Date.now() - startTime;
     process.stderr.write(`[tool-proxy] terraform ${body.args.join(' ')} in ${hostCwd} -> exit ${result.exitCode}\n`);
+    auditEmit(wsHash, 'tool.execute', { endpoint: 'terraform', args_summary: body.args.join(' '), exit_code: result.exitCode, duration_ms });
     sendJson(res, 200, result);
     return;
   }
@@ -515,12 +538,13 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const validation = validateKubectl(body.args);
+    const wsHash = body.workspace_hash || '';
     if (!validation.allowed) {
       process.stderr.write(`[tool-proxy] kubectl ${body.args.join(' ')} BLOCKED (${validation.reason})\n`);
+      auditEmit(wsHash, 'tool.blocked', { endpoint: 'kubectl', args_summary: body.args.join(' '), reason: validation.reason });
       sendJson(res, 200, { success: false, blocked: true, reason: validation.reason, stdout: '', stderr: validation.reason + '\n', exitCode: 126 });
       return;
     }
-    const wsHash = body.workspace_hash || '';
     const options = {};
     const hostCwd = toHostPath(body.cwd, wsHash);
     if (hostCwd && existsSync(hostCwd)) {
@@ -531,8 +555,11 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 400, { success: false, error: msg });
       return;
     }
+    const startTime = Date.now();
     const result = await executeCommand('kubectl', body.args, options);
+    const duration_ms = Date.now() - startTime;
     process.stderr.write(`[tool-proxy] kubectl ${body.args.join(' ')} -> exit ${result.exitCode}\n`);
+    auditEmit(wsHash, 'tool.execute', { endpoint: 'kubectl', args_summary: body.args.join(' '), exit_code: result.exitCode, duration_ms });
     sendJson(res, 200, result);
     return;
   }
@@ -545,12 +572,13 @@ const server = http.createServer(async (req, res) => {
       return;
     }
     const validation = validateAws(body.args);
+    const wsHash = body.workspace_hash || '';
     if (!validation.allowed) {
       process.stderr.write(`[tool-proxy] aws ${body.args.join(' ')} BLOCKED (${validation.reason})\n`);
+      auditEmit(wsHash, 'tool.blocked', { endpoint: 'aws', args_summary: body.args.join(' '), reason: validation.reason });
       sendJson(res, 200, { success: false, blocked: true, reason: validation.reason, stdout: '', stderr: validation.reason + '\n', exitCode: 126 });
       return;
     }
-    const wsHash = body.workspace_hash || '';
     const options = {};
     const hostCwd = toHostPath(body.cwd, wsHash);
     if (hostCwd && existsSync(hostCwd)) {
@@ -561,8 +589,11 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 400, { success: false, error: msg });
       return;
     }
+    const startTime = Date.now();
     const result = await executeCommand('aws', body.args, options);
+    const duration_ms = Date.now() - startTime;
     process.stderr.write(`[tool-proxy] aws ${body.args.join(' ')} -> exit ${result.exitCode}\n`);
+    auditEmit(wsHash, 'tool.execute', { endpoint: 'aws', args_summary: body.args.join(' '), exit_code: result.exitCode, duration_ms });
     sendJson(res, 200, result);
     return;
   }
@@ -728,6 +759,7 @@ const server = http.createServer(async (req, res) => {
       saveAgentMeta(wsHash, id, meta);
 
       process.stderr.write(`[tool-proxy] agent/spawn ${id} (${name})\n`);
+      auditEmit(wsHash, 'agent.spawn', { agent_id: id, name, prompt_truncated: body.prompt.slice(0, 200) });
       sendJson(res, 200, { success: true, id, name });
       return;
     }
@@ -753,6 +785,7 @@ const server = http.createServer(async (req, res) => {
             meta.status = (container.exitCode === 0) ? 'done' : 'failed';
             meta.exit_code = container.exitCode;
             saveAgentMeta(wsHashParam, agentId, meta);
+            auditEmit(wsHashParam, 'agent.done', { agent_id: agentId, status: meta.status, exit_code: container.exitCode });
           }
         }
 
@@ -804,6 +837,7 @@ const server = http.createServer(async (req, res) => {
           await executeCommand('docker', ['rm', '-f', containerName]);
           meta.status = 'killed';
           saveAgentMeta(wsHash, agentId, meta);
+          auditEmit(wsHash, 'agent.done', { agent_id: agentId, status: 'killed', exit_code: null });
           killed++;
         }
         process.stderr.write(`[tool-proxy] agent/kill --all (${killed} killed)\n`);
@@ -826,6 +860,7 @@ const server = http.createServer(async (req, res) => {
       }
 
       process.stderr.write(`[tool-proxy] agent/kill ${resolved.id}\n`);
+      auditEmit(wsHash, 'agent.done', { agent_id: resolved.id, status: 'killed', exit_code: null });
       sendJson(res, 200, { success: true, message: `Killed ${resolved.id}.` });
       return;
     }
@@ -850,6 +885,7 @@ const server = http.createServer(async (req, res) => {
           if (!container.exists || container.status === 'exited') {
             meta.status = (container.exitCode === 0) ? 'done' : 'failed';
             meta.exit_code = container.exitCode;
+            auditEmit(wsHashParam, 'agent.done', { agent_id: agentId, status: meta.status, exit_code: container.exitCode });
           }
         }
 
@@ -900,6 +936,7 @@ const server = http.createServer(async (req, res) => {
             meta.exit_code = container.exitCode;
             saveAgentMeta(wsHashParam, resolved.id, meta);
           }
+          auditEmit(wsHashParam, 'agent.done', { agent_id: resolved.id, status, exit_code: container.exitCode });
           process.stderr.write(`[tool-proxy] agent/wait ${resolved.id} -> ${status}\n`);
           sendJson(res, 200, { success: true, status, exit_code: container.exitCode, log });
           return;

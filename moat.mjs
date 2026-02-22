@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Moat — sandboxed Claude Code launcher
 // Usage: moat [workspace_path] [--add-dir <path>...] [claude args...]
-// Subcommands: doctor | update [--version X.Y.Z] | down [--all] | stop | attach <dir> | detach <dir|--all> | init | uninstall | allow-domain <domain...>
+// Subcommands: doctor | update [--version X.Y.Z] | down [--all] | stop | attach <dir> | detach <dir|--all> | init | audit [hash] | uninstall | allow-domain <domain...>
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, lstatSync, unlinkSync } from 'node:fs';
 import { dirname, join, basename } from 'node:path';
@@ -21,6 +21,7 @@ import { copyClaudeMd } from './lib/claude-md.mjs';
 import { refreshHooks } from './lib/hooks.mjs';
 import { readHostMcpServers, extractMcpDomains, extractHttpMcpServers, copyMcpServers } from './lib/mcp-servers.mjs';
 import { workspaceId, workspaceDataDir } from './lib/workspace-id.mjs';
+import { createAuditLogger } from './lib/audit.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_DIR = __dirname;
@@ -138,6 +139,12 @@ if (subcommand === 'update') {
   process.exit(0);
 }
 
+if (subcommand === 'audit') {
+  const { auditView } = await import('./lib/audit-view.mjs');
+  await auditView(subcommandArgs);
+  process.exit(0);
+}
+
 if (subcommand === 'init') {
   const { initConfig } = await import('./lib/init-config.mjs');
   await initConfig(workspace);
@@ -160,6 +167,11 @@ process.env.MOAT_WORKSPACE = workspace;
 const hash = workspaceId(workspace);
 const wsDir = workspaceDataDir(hash);
 mkdirSync(wsDir, { recursive: true });
+
+// Create audit logger for this session
+const audit = createAuditLogger(wsDir);
+const sessionStartTime = Date.now();
+audit.emit('session.start', { workspace, hash, moat_version: moatVersion, runtime: 'claude' });
 
 // Legacy migration: tear down old single-instance container
 if (await isContainerRunning('moat-devcontainer-1')) {
@@ -335,4 +347,5 @@ await copyMcpServers(containerName, hostMcpServers, { proxyToken, proxiedServers
 
 // Execute Claude Code (blocks until exit)
 const exitCode = await execClaude(workspace, REPO_DIR, wsDir, claudeArgs, extraDirs, projectName);
+audit.emit('session.end', { exit_code: exitCode, duration_ms: Date.now() - sessionStartTime });
 process.exit(exitCode);
