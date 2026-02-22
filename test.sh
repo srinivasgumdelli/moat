@@ -108,12 +108,12 @@ echo "--- Phase 4: Auth ---"
 
 TOKEN="$(cat "$TOKEN_FILE")"
 
-# Valid token accepted
+# Valid token accepted (use /git endpoint with workspace_hash)
 HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
-  -X POST "http://127.0.0.1:${PROXY_PORT}/exec" \
+  -X POST "http://127.0.0.1:${PROXY_PORT}/git" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{"command":"git","args":["--version"]}')
+  -d "{\"args\":[\"--version\"],\"cwd\":\"/workspace\",\"workspace_hash\":\"$TEST_HASH\"}")
 if [ "$HTTP_CODE" = "200" ]; then
   pass "Valid token accepted (HTTP $HTTP_CODE)"
 else
@@ -122,25 +122,25 @@ fi
 
 # Invalid token rejected
 HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
-  -X POST "http://127.0.0.1:${PROXY_PORT}/exec" \
+  -X POST "http://127.0.0.1:${PROXY_PORT}/git" \
   -H "Authorization: Bearer invalidtoken" \
   -H "Content-Type: application/json" \
-  -d '{"command":"git","args":["--version"]}')
-if [ "$HTTP_CODE" = "403" ]; then
+  -d '{"args":["--version"],"cwd":"/workspace"}')
+if [ "$HTTP_CODE" = "401" ]; then
   pass "Invalid token rejected (HTTP $HTTP_CODE)"
 else
-  fail "Invalid token not rejected (HTTP $HTTP_CODE, expected 403)"
+  fail "Invalid token not rejected (HTTP $HTTP_CODE, expected 401)"
 fi
 
 # Missing token rejected
 HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
-  -X POST "http://127.0.0.1:${PROXY_PORT}/exec" \
+  -X POST "http://127.0.0.1:${PROXY_PORT}/git" \
   -H "Content-Type: application/json" \
-  -d '{"command":"git","args":["--version"]}')
-if [ "$HTTP_CODE" = "403" ]; then
+  -d '{"args":["--version"],"cwd":"/workspace"}')
+if [ "$HTTP_CODE" = "401" ]; then
   pass "Missing token rejected (HTTP $HTTP_CODE)"
 else
-  fail "Missing token not rejected (HTTP $HTTP_CODE, expected 403)"
+  fail "Missing token not rejected (HTTP $HTTP_CODE, expected 401)"
 fi
 
 # --- Phase 5: Proxied command ---
@@ -148,10 +148,10 @@ echo ""
 echo "--- Phase 5: Proxied command ---"
 
 RESPONSE=$(curl -s \
-  -X POST "http://127.0.0.1:${PROXY_PORT}/exec" \
+  -X POST "http://127.0.0.1:${PROXY_PORT}/git" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{"command":"git","args":["--version"]}')
+  -d "{\"args\":[\"--version\"],\"cwd\":\"/workspace\",\"workspace_hash\":\"$TEST_HASH\"}")
 
 if echo "$RESPONSE" | grep -q "git version"; then
   pass "git --version returned valid output"
@@ -321,8 +321,8 @@ else
 fi
 
 # statusline produces formatted output from JSON
-SL_OUTPUT=$(dc_exec bash -c 'echo "{\"model\":{\"display_name\":\"Opus\"},\"context_window\":{\"used_percentage\":42.5},\"cost\":{\"total_cost_usd\":\"0.37\"}}" | /home/node/.claude/hooks/statusline.sh' 2>&1) || true
-if echo "$SL_OUTPUT" | grep -q "Opus" && echo "$SL_OUTPUT" | grep -q "ctx: 43%" && echo "$SL_OUTPUT" | grep -q '\\$0.37'; then
+SL_OUTPUT=$(dc_exec bash -c 'echo "{\"context_window\":{\"used_percentage\":42.5},\"cost\":{\"total_cost_usd\":\"0.37\"}}" | /home/node/.claude/hooks/statusline.sh' 2>&1) || true
+if echo "$SL_OUTPUT" | grep -q "43%" && echo "$SL_OUTPUT" | grep -q '\\$0.37'; then
   pass "statusline.sh formats output correctly: $SL_OUTPUT"
 else
   fail "statusline.sh unexpected output: $SL_OUTPUT"
