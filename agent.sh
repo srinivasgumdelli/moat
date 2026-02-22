@@ -105,7 +105,9 @@ cmd_run() {
 
   # Start the agent in the background
   # --allowedTools alone restricts to read-only tools; listed tools auto-execute in -p mode
+  # Unset CLAUDECODE to allow nested Claude Code sessions
   (
+    unset CLAUDECODE
     claude -p "$prompt" --allowedTools "$allowed_tools" \
       > "$dir/output.txt" 2>"$dir/stderr.txt"
     echo $? > "$dir/exit_code"
