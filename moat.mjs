@@ -11,17 +11,18 @@ import { execSync, spawnSync } from 'node:child_process';
 import { parseArgs } from './lib/cli.mjs';
 import { log, err, DIM, RESET } from './lib/colors.mjs';
 import { generateProjectConfig, generateExtraDirsYaml } from './lib/compose.mjs';
-import { findContainer, mountsMatch, teardown, startContainer, execClaude, isContainerRunning } from './lib/container.mjs';
+import { findContainer, mountsMatch, teardown, startContainer, execRuntime, isContainerRunning } from './lib/container.mjs';
 import { startProxy, stopProxy } from './lib/proxy.mjs';
 import { doctor } from './lib/doctor.mjs';
 import { update } from './lib/update.mjs';
 import { down } from './lib/down.mjs';
 import { attach, detach } from './lib/attach.mjs';
-import { copyClaudeMd } from './lib/claude-md.mjs';
+import { copyInstructions } from './lib/instructions.mjs';
 import { refreshHooks } from './lib/hooks.mjs';
 import { readHostMcpServers, extractMcpDomains, extractHttpMcpServers, copyMcpServers } from './lib/mcp-servers.mjs';
 import { workspaceId, workspaceDataDir } from './lib/workspace-id.mjs';
 import { createAuditLogger } from './lib/audit.mjs';
+import { getRuntime, resolveRuntimeName } from './lib/runtimes/index.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_DIR = __dirname;
@@ -36,7 +37,7 @@ try {
   process.exit(1);
 }
 
-const { subcommand, subcommandArgs, workspace, extraDirs, claudeArgs } = parsed;
+const { subcommand, subcommandArgs, workspace, extraDirs, claudeArgs, runtimeArg } = parsed;
 
 // --- Handle uninstall early ---
 if (subcommand === 'uninstall') {
@@ -161,6 +162,16 @@ try {
   moatVersion = sha + (dirty ? '-dirty' : '');
 } catch {}
 
+// Resolve runtime
+const runtimeName = resolveRuntimeName(runtimeArg, workspace);
+let runtime;
+try {
+  runtime = getRuntime(runtimeName);
+} catch (e) {
+  err(e.message);
+  process.exit(1);
+}
+
 process.env.MOAT_WORKSPACE = workspace;
 
 // Compute per-workspace data directory
@@ -171,7 +182,7 @@ mkdirSync(wsDir, { recursive: true });
 // Create audit logger for this session
 const audit = createAuditLogger(wsDir);
 const sessionStartTime = Date.now();
-audit.emit('session.start', { workspace, hash, moat_version: moatVersion, runtime: 'claude' });
+audit.emit('session.start', { workspace, hash, moat_version: moatVersion, runtime: runtimeName });
 
 // Legacy migration: tear down old single-instance container
 if (await isContainerRunning('moat-devcontainer-1')) {
@@ -198,7 +209,7 @@ if (!existsSync(join(workspace, '.moat.yml'))) {
 }
 
 // Read host MCP servers early — domains go into squid before container starts
-const hostMcpServers = readHostMcpServers();
+const hostMcpServers = readHostMcpServers(runtime);
 const mcpDomains = extractMcpDomains(hostMcpServers);
 
 // Extract external HTTP MCP servers to proxy through tool-proxy (auth stays on host)
@@ -241,7 +252,7 @@ const devcontainerConfig = {
   customizations: {
     vscode: {
       extensions: [
-        'anthropic.claude-code',
+        ...(runtime.vscodeExtension ? [runtime.vscodeExtension] : []),
         'dbaeumer.vscode-eslint',
         'esbenp.prettier-vscode',
         'eamodio.gitlens',
@@ -258,9 +269,7 @@ const devcontainerConfig = {
     MOAT_VERSION: moatVersion,
   },
   remoteUser: 'node',
-  remoteEnv: {
-    ANTHROPIC_API_KEY: '${localEnv:ANTHROPIC_API_KEY}',
-  },
+  remoteEnv: { ...runtime.envVars },
   postStartCommand: "echo '[moat] Container ready'",
 };
 writeFileSync(join(wsDir, 'devcontainer.json'), JSON.stringify(devcontainerConfig, null, 2) + '\n');
@@ -280,14 +289,18 @@ process.on('SIGTERM', () => process.exit(0));
 
 // Build agent image if missing
 ensureTokenInRepo();
+const agentImageName = `moat-agent-${runtimeName}`;
 try {
-  execSync('docker image inspect moat-agent', { stdio: 'pipe' });
+  execSync(`docker image inspect ${agentImageName}`, { stdio: 'pipe' });
 } catch {
-  log('Building agent image...');
-  const agentVersion = process.env.CLAUDE_CODE_VERSION || '2.1.42';
+  log(`Building agent image (${runtime.displayName})...`);
+  const runtimeVersion = process.env[runtime.versionEnvVar] || runtime.defaultVersion;
   const buildResult = spawnSync('docker', [
-    'build', '-t', 'moat-agent',
-    '--build-arg', `CLAUDE_CODE_VERSION=${agentVersion}`,
+    'build', '-t', agentImageName,
+    '--build-arg', `RUNTIME=${runtimeName}`,
+    '--build-arg', `RUNTIME_VERSION=${runtimeVersion}`,
+    // Keep backward compat with existing Dockerfile.agent
+    '--build-arg', `CLAUDE_CODE_VERSION=${runtimeVersion}`,
     '-f', join(REPO_DIR, 'Dockerfile.agent'),
     REPO_DIR
   ], { stdio: 'inherit' });
@@ -333,19 +346,22 @@ if (!containerName) {
   process.exit(1);
 }
 
-// Copy global CLAUDE.md into container
-await copyClaudeMd(containerName, REPO_DIR);
+// Copy instruction files into container
+await copyInstructions(containerName, REPO_DIR, runtime);
 
 // Refresh hook scripts from repo (volume persistence shadows Dockerfile COPY)
-await refreshHooks(containerName, REPO_DIR);
+if (runtime.configDir === '.claude') {
+  await refreshHooks(containerName, REPO_DIR);
+}
 
-// Forward host MCP server configs into container
-// External HTTP servers get proxied through tool-proxy (auth stays on host)
-const proxyToken = existsSync(tokenPath) ? readFileSync(tokenPath, 'utf-8').trim() : null;
-const proxiedServerNames = new Set(Object.keys(httpMcpServers));
-await copyMcpServers(containerName, hostMcpServers, { proxyToken, proxiedServers: proxiedServerNames });
+// Forward host MCP server configs into container (Claude Code only — other runtimes don't use MCP)
+if (runtime.configDir === '.claude') {
+  const proxyToken = existsSync(tokenPath) ? readFileSync(tokenPath, 'utf-8').trim() : null;
+  const proxiedServerNames = new Set(Object.keys(httpMcpServers));
+  await copyMcpServers(containerName, hostMcpServers, { proxyToken, proxiedServers: proxiedServerNames });
+}
 
-// Execute Claude Code (blocks until exit)
-const exitCode = await execClaude(workspace, REPO_DIR, wsDir, claudeArgs, extraDirs, projectName);
+// Execute runtime (blocks until exit)
+const exitCode = await execRuntime(runtime, workspace, REPO_DIR, wsDir, claudeArgs, extraDirs, projectName);
 audit.emit('session.end', { exit_code: exitCode, duration_ms: Date.now() - sessionStartTime });
 process.exit(exitCode);

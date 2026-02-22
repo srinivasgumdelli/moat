@@ -3,6 +3,11 @@
 #
 # All sections are optional. If no .moat.yml exists, Moat uses defaults.
 
+# Runtime — which coding assistant to use (default: claude)
+# Options: claude, codex, opencode, amp
+# Can also be set via --runtime flag on the command line.
+# runtime: opencode
+
 # Background services — Docker containers on the sandbox network
 # These run alongside the devcontainer and are accessible by service name.
 # Smart defaults (healthcheck, resource limits) are applied for known images:

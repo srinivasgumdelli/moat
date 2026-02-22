@@ -754,9 +754,10 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      const apiKey = process.env.ANTHROPIC_API_KEY || '';
+      const apiKeyEnv = body.api_key_env || 'ANTHROPIC_API_KEY';
+      const apiKey = process.env[apiKeyEnv] || '';
       if (!apiKey) {
-        sendJson(res, 400, { success: false, error: 'ANTHROPIC_API_KEY not set on host — cannot spawn agent.' });
+        sendJson(res, 400, { success: false, error: `${apiKeyEnv} not set on host — cannot spawn agent.` });
         return;
       }
 
@@ -772,9 +773,13 @@ const server = http.createServer(async (req, res) => {
       const network = `moat-${wsHash}_sandbox`;
       const tools = body.tools || 'Read,Grep,Glob,Task,WebFetch,WebSearch';
 
+      const runtimeName = body.runtime || 'claude';
+      const runtimeBinary = body.runtime_binary || 'claude';
+      const agentImageName = `moat-agent-${runtimeName}`;
+
       // Write API key to a temp env file (avoids exposing it in docker inspect / /proc)
       const envFile = join(tmpdir(), `moat-agent-${id}.env`);
-      writeFileSync(envFile, `ANTHROPIC_API_KEY=${apiKey}\n`, { mode: 0o600 });
+      writeFileSync(envFile, `${apiKeyEnv}=${apiKey}\n`, { mode: 0o600 });
 
       const dockerArgs = [
         'run', '--detach',
@@ -795,8 +800,9 @@ const server = http.createServer(async (req, res) => {
         '--env', `MOAT_WORKSPACE_HASH=${wsHash}`,
         '--env', `MOAT_AGENT_PROMPT=${body.prompt}`,
         '--env', `MOAT_AGENT_TOOLS=${tools}`,
+        '--env', `MOAT_RUNTIME_BINARY=${runtimeBinary}`,
         '--mount', `type=bind,src=${hostWorkspace},dst=/workspace,readonly`,
-        'moat-agent',
+        agentImageName,
       ];
 
       const result = await executeCommand('docker', dockerArgs);
