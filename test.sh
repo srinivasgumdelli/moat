@@ -412,6 +412,62 @@ else
   fail "readAuditLog({ last: 2 }) returned $LAST_RESULT events (expected 2)"
 fi
 
+# Test audit log rotation
+ROTATION_DIR=$(mktemp -d)
+# Create an audit.jsonl > 5MB (fill with test events)
+node -e "
+  import { writeFileSync } from 'node:fs';
+  import { join } from 'node:path';
+  const path = join('$ROTATION_DIR', 'audit.jsonl');
+  const event = JSON.stringify({ ts: '2025-01-01T00:00:00Z', type: 'test.event', data: 'x'.repeat(500) }) + '\n';
+  // ~550 bytes per event, need ~10000 events for 5MB+
+  let content = '';
+  for (let i = 0; i < 10000; i++) content += event;
+  writeFileSync(path, content);
+" 2>/dev/null
+
+# Verify our oversized file was created
+ORIG_SIZE=$(stat -f%z "$ROTATION_DIR/audit.jsonl" 2>/dev/null || stat -c%s "$ROTATION_DIR/audit.jsonl" 2>/dev/null)
+if [ "$ORIG_SIZE" -gt 5000000 ]; then
+  pass "Created oversized audit.jsonl (${ORIG_SIZE} bytes) for rotation test"
+else
+  fail "Failed to create oversized audit.jsonl (${ORIG_SIZE} bytes)"
+fi
+
+# Call createAuditLogger — should trigger rotation
+node -e "
+  import('./lib/audit.mjs').then(m => { m.createAuditLogger('$ROTATION_DIR'); });
+" 2>/dev/null
+
+if [ -f "$ROTATION_DIR/audit.1.jsonl" ]; then
+  pass "Rotation created audit.1.jsonl"
+else
+  fail "Rotation did not create audit.1.jsonl"
+fi
+
+# The new audit.jsonl should be empty or very small (just the header from createAuditLogger)
+NEW_SIZE=$(stat -f%z "$ROTATION_DIR/audit.jsonl" 2>/dev/null || stat -c%s "$ROTATION_DIR/audit.jsonl" 2>/dev/null || echo "0")
+if [ "$NEW_SIZE" -lt 1000 ]; then
+  pass "New audit.jsonl is small after rotation (${NEW_SIZE} bytes)"
+else
+  fail "New audit.jsonl is still large after rotation (${NEW_SIZE} bytes)"
+fi
+
+# readAuditLog should read both rotated and current files
+ALL_EVENTS=$(node -e "
+  import('./lib/audit.mjs').then(m => {
+    const events = m.readAuditLog('$ROTATION_DIR');
+    console.log(events.length);
+  });
+" 2>/dev/null)
+if [ "$ALL_EVENTS" -gt 9000 ]; then
+  pass "readAuditLog reads rotated + current files ($ALL_EVENTS events)"
+else
+  fail "readAuditLog after rotation returned only $ALL_EVENTS events (expected >9000)"
+fi
+
+rm -rf "$ROTATION_DIR"
+
 # --- Phase 5e: Secrets scanning ---
 echo ""
 echo "--- Phase 5e: Secrets scanning ---"
