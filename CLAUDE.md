@@ -14,6 +14,9 @@ These are instructions for working on the Moat codebase itself.
 - `test.sh` — end-to-end test suite (run from host)
 - `verify.sh` — post-start verification (runs inside container)
 
+## Git Workflow
+- After merging a PR, delete the branch both locally and on the remote
+
 ## Conventions
 - Pure ESM (`.mjs` extension, `import`/`export`)
 - No build step — scripts run directly with Node
