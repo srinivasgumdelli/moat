@@ -468,6 +468,31 @@ fi
 
 rm -rf "$ROTATION_DIR"
 
+# Test audit --tail live-follow mode
+# Start moat audit with --tail in background, append a unique event, verify it shows up
+TAIL_OUTPUT="/tmp/moat-test-tail-output.$$"
+TAIL_MARKER="tail_test_$(date +%s)"
+node -e "
+  import('./lib/audit-view.mjs').then(m => m.auditView(['$TEST_HASH', '--tail']));
+" > "$TAIL_OUTPUT" 2>&1 &
+TAIL_PID=$!
+sleep 1
+
+# Append a unique test event to audit.jsonl
+echo "{\"ts\":\"2099-01-01T00:00:00Z\",\"type\":\"test.tail\",\"marker\":\"$TAIL_MARKER\"}" >> "$TEST_WS_DIR/audit.jsonl"
+sleep 2
+
+# Kill the tail process
+kill "$TAIL_PID" 2>/dev/null || true
+wait "$TAIL_PID" 2>/dev/null || true
+
+if grep -q "$TAIL_MARKER" "$TAIL_OUTPUT" 2>/dev/null; then
+  pass "audit --tail shows live-appended event"
+else
+  fail "audit --tail did not capture live event (marker: $TAIL_MARKER)"
+fi
+rm -f "$TAIL_OUTPUT"
+
 # --- Phase 5e: Secrets scanning ---
 echo ""
 echo "--- Phase 5e: Secrets scanning ---"
