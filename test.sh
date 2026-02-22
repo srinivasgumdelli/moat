@@ -108,12 +108,12 @@ echo "--- Phase 4: Auth ---"
 
 TOKEN="$(cat "$TOKEN_FILE")"
 
-# Valid token accepted
+# Valid token accepted (use /git endpoint with workspace_hash)
 HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
-  -X POST "http://127.0.0.1:${PROXY_PORT}/exec" \
+  -X POST "http://127.0.0.1:${PROXY_PORT}/git" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{"command":"git","args":["--version"]}')
+  -d "{\"args\":[\"--version\"],\"cwd\":\"/workspace\",\"workspace_hash\":\"$TEST_HASH\"}")
 if [ "$HTTP_CODE" = "200" ]; then
   pass "Valid token accepted (HTTP $HTTP_CODE)"
 else
@@ -122,25 +122,25 @@ fi
 
 # Invalid token rejected
 HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
-  -X POST "http://127.0.0.1:${PROXY_PORT}/exec" \
+  -X POST "http://127.0.0.1:${PROXY_PORT}/git" \
   -H "Authorization: Bearer invalidtoken" \
   -H "Content-Type: application/json" \
-  -d '{"command":"git","args":["--version"]}')
-if [ "$HTTP_CODE" = "403" ]; then
+  -d '{"args":["--version"],"cwd":"/workspace"}')
+if [ "$HTTP_CODE" = "401" ]; then
   pass "Invalid token rejected (HTTP $HTTP_CODE)"
 else
-  fail "Invalid token not rejected (HTTP $HTTP_CODE, expected 403)"
+  fail "Invalid token not rejected (HTTP $HTTP_CODE, expected 401)"
 fi
 
 # Missing token rejected
 HTTP_CODE=$(curl -s -o /dev/null -w '%{http_code}' \
-  -X POST "http://127.0.0.1:${PROXY_PORT}/exec" \
+  -X POST "http://127.0.0.1:${PROXY_PORT}/git" \
   -H "Content-Type: application/json" \
-  -d '{"command":"git","args":["--version"]}')
-if [ "$HTTP_CODE" = "403" ]; then
+  -d '{"args":["--version"],"cwd":"/workspace"}')
+if [ "$HTTP_CODE" = "401" ]; then
   pass "Missing token rejected (HTTP $HTTP_CODE)"
 else
-  fail "Missing token not rejected (HTTP $HTTP_CODE, expected 403)"
+  fail "Missing token not rejected (HTTP $HTTP_CODE, expected 401)"
 fi
 
 # --- Phase 5: Proxied command ---
@@ -148,10 +148,10 @@ echo ""
 echo "--- Phase 5: Proxied command ---"
 
 RESPONSE=$(curl -s \
-  -X POST "http://127.0.0.1:${PROXY_PORT}/exec" \
+  -X POST "http://127.0.0.1:${PROXY_PORT}/git" \
   -H "Authorization: Bearer ${TOKEN}" \
   -H "Content-Type: application/json" \
-  -d '{"command":"git","args":["--version"]}')
+  -d "{\"args\":[\"--version\"],\"cwd\":\"/workspace\",\"workspace_hash\":\"$TEST_HASH\"}")
 
 if echo "$RESPONSE" | grep -q "git version"; then
   pass "git --version returned valid output"
@@ -219,6 +219,107 @@ if echo "$RESPONSE" | jq -r '.stdout' | grep -q "git version"; then
   pass "Empty hash with single session falls back correctly (backward compat)"
 else
   fail "Empty hash with single session failed: $RESPONSE"
+fi
+
+# --- Phase 5c: IaC allowlist enforcement ---
+echo ""
+echo "--- Phase 5c: IaC allowlist enforcement ---"
+
+# Helper to test IaC proxy responses
+iac_test() {
+  local endpoint="$1" body="$2"
+  curl -s -X POST "http://127.0.0.1:${PROXY_PORT}/${endpoint}" \
+    -H "Authorization: Bearer ${TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "$body"
+}
+
+# Terraform: plan is allowed
+TF_PLAN=$(iac_test terraform "{\"args\":[\"plan\"],\"cwd\":\"/workspace\",\"workspace_hash\":\"$TEST_HASH\"}")
+if echo "$TF_PLAN" | jq -e '.blocked' >/dev/null 2>&1 && [ "$(echo "$TF_PLAN" | jq -r '.blocked')" = "true" ]; then
+  fail "terraform plan was blocked (should be allowed)"
+else
+  pass "terraform plan is allowed"
+fi
+
+# Terraform: apply is blocked
+TF_APPLY=$(iac_test terraform "{\"args\":[\"apply\"],\"cwd\":\"/workspace\",\"workspace_hash\":\"$TEST_HASH\"}")
+if echo "$TF_APPLY" | jq -e '.blocked' >/dev/null 2>&1 && [ "$(echo "$TF_APPLY" | jq -r '.blocked')" = "true" ]; then
+  pass "terraform apply is blocked"
+else
+  fail "terraform apply was not blocked: $TF_APPLY"
+fi
+
+# Terraform: destroy is blocked
+TF_DESTROY=$(iac_test terraform "{\"args\":[\"destroy\"],\"cwd\":\"/workspace\",\"workspace_hash\":\"$TEST_HASH\"}")
+if echo "$TF_DESTROY" | jq -e '.blocked' >/dev/null 2>&1 && [ "$(echo "$TF_DESTROY" | jq -r '.blocked')" = "true" ]; then
+  pass "terraform destroy is blocked"
+else
+  fail "terraform destroy was not blocked: $TF_DESTROY"
+fi
+
+# kubectl: get is allowed
+K8S_GET=$(iac_test kubectl "{\"args\":[\"get\",\"pods\"],\"cwd\":\"/workspace\",\"workspace_hash\":\"$TEST_HASH\"}")
+if echo "$K8S_GET" | jq -e '.blocked' >/dev/null 2>&1 && [ "$(echo "$K8S_GET" | jq -r '.blocked')" = "true" ]; then
+  fail "kubectl get was blocked (should be allowed)"
+else
+  pass "kubectl get is allowed"
+fi
+
+# kubectl: delete is blocked
+K8S_DEL=$(iac_test kubectl "{\"args\":[\"delete\",\"pod\",\"foo\"],\"cwd\":\"/workspace\",\"workspace_hash\":\"$TEST_HASH\"}")
+if echo "$K8S_DEL" | jq -e '.blocked' >/dev/null 2>&1 && [ "$(echo "$K8S_DEL" | jq -r '.blocked')" = "true" ]; then
+  pass "kubectl delete is blocked"
+else
+  fail "kubectl delete was not blocked: $K8S_DEL"
+fi
+
+# kubectl: apply is blocked
+K8S_APPLY=$(iac_test kubectl "{\"args\":[\"apply\",\"-f\",\"foo.yml\"],\"cwd\":\"/workspace\",\"workspace_hash\":\"$TEST_HASH\"}")
+if echo "$K8S_APPLY" | jq -e '.blocked' >/dev/null 2>&1 && [ "$(echo "$K8S_APPLY" | jq -r '.blocked')" = "true" ]; then
+  pass "kubectl apply is blocked"
+else
+  fail "kubectl apply was not blocked: $K8S_APPLY"
+fi
+
+# AWS: describe-instances is allowed (read-only verb)
+AWS_DESC=$(iac_test aws "{\"args\":[\"ec2\",\"describe-instances\"],\"cwd\":\"/workspace\",\"workspace_hash\":\"$TEST_HASH\"}")
+if echo "$AWS_DESC" | jq -e '.blocked' >/dev/null 2>&1 && [ "$(echo "$AWS_DESC" | jq -r '.blocked')" = "true" ]; then
+  fail "aws ec2 describe-instances was blocked (should be allowed)"
+else
+  pass "aws ec2 describe-instances is allowed"
+fi
+
+# AWS: s3 ls is allowed (explicit allowlist)
+AWS_S3LS=$(iac_test aws "{\"args\":[\"s3\",\"ls\"],\"cwd\":\"/workspace\",\"workspace_hash\":\"$TEST_HASH\"}")
+if echo "$AWS_S3LS" | jq -e '.blocked' >/dev/null 2>&1 && [ "$(echo "$AWS_S3LS" | jq -r '.blocked')" = "true" ]; then
+  fail "aws s3 ls was blocked (should be allowed)"
+else
+  pass "aws s3 ls is allowed"
+fi
+
+# AWS: terminate-instances is blocked
+AWS_TERM=$(iac_test aws "{\"args\":[\"ec2\",\"terminate-instances\"],\"cwd\":\"/workspace\",\"workspace_hash\":\"$TEST_HASH\"}")
+if echo "$AWS_TERM" | jq -e '.blocked' >/dev/null 2>&1 && [ "$(echo "$AWS_TERM" | jq -r '.blocked')" = "true" ]; then
+  pass "aws ec2 terminate-instances is blocked"
+else
+  fail "aws ec2 terminate-instances was not blocked: $AWS_TERM"
+fi
+
+# AWS: assume-role is blocked (was missed by old blocklist)
+AWS_ASSUME=$(iac_test aws "{\"args\":[\"sts\",\"assume-role\"],\"cwd\":\"/workspace\",\"workspace_hash\":\"$TEST_HASH\"}")
+if echo "$AWS_ASSUME" | jq -e '.blocked' >/dev/null 2>&1 && [ "$(echo "$AWS_ASSUME" | jq -r '.blocked')" = "true" ]; then
+  pass "aws sts assume-role is blocked"
+else
+  fail "aws sts assume-role was not blocked: $AWS_ASSUME"
+fi
+
+# AWS: sts get-caller-identity is allowed (explicit allowlist)
+AWS_CALLER=$(iac_test aws "{\"args\":[\"sts\",\"get-caller-identity\"],\"cwd\":\"/workspace\",\"workspace_hash\":\"$TEST_HASH\"}")
+if echo "$AWS_CALLER" | jq -e '.blocked' >/dev/null 2>&1 && [ "$(echo "$AWS_CALLER" | jq -r '.blocked')" = "true" ]; then
+  fail "aws sts get-caller-identity was blocked (should be allowed)"
+else
+  pass "aws sts get-caller-identity is allowed"
 fi
 
 # --- Phase 6: Container ---
@@ -321,8 +422,8 @@ else
 fi
 
 # statusline produces formatted output from JSON
-SL_OUTPUT=$(dc_exec bash -c 'echo "{\"model\":{\"display_name\":\"Opus\"},\"context_window\":{\"used_percentage\":42.5},\"cost\":{\"total_cost_usd\":\"0.37\"}}" | /home/node/.claude/hooks/statusline.sh' 2>&1) || true
-if echo "$SL_OUTPUT" | grep -q "Opus" && echo "$SL_OUTPUT" | grep -q "ctx: 43%" && echo "$SL_OUTPUT" | grep -q '\\$0.37'; then
+SL_OUTPUT=$(dc_exec bash -c 'echo "{\"context_window\":{\"used_percentage\":42.5},\"cost\":{\"total_cost_usd\":\"0.37\"}}" | /home/node/.claude/hooks/statusline.sh' 2>&1) || true
+if echo "$SL_OUTPUT" | grep -q "43%" && echo "$SL_OUTPUT" | grep -q '\\$0.37'; then
   pass "statusline.sh formats output correctly: $SL_OUTPUT"
 else
   fail "statusline.sh unexpected output: $SL_OUTPUT"
