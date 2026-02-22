@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Moat — sandboxed Claude Code launcher
 // Usage: moat [workspace_path] [--add-dir <path>...] [claude args...]
-// Subcommands: doctor | update [--version X.Y.Z] | down [--all] | stop | attach <dir> | detach <dir|--all> | plan | init | uninstall
+// Subcommands: doctor | update [--version X.Y.Z] | down [--all] | stop | attach <dir> | detach <dir|--all> | plan | init | uninstall | allow-domain <domain...>
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, lstatSync, unlinkSync } from 'node:fs';
 import { dirname, join, basename } from 'node:path';
@@ -99,6 +99,12 @@ if (subcommand === 'attach') {
 
 if (subcommand === 'detach') {
   await detach(subcommandArgs);
+  process.exit(0);
+}
+
+if (subcommand === 'allow-domain') {
+  const { allowDomain } = await import('./lib/allow-domain.mjs');
+  await allowDomain(subcommandArgs, workspace);
   process.exit(0);
 }
 
