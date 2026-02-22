@@ -97,4 +97,4 @@ The status line at the bottom of the screen shows:
 - **ctx** — context window usage percentage
 - **$** — session cost so far
 
-Example: `Fix auth module | 2ag | 34% | $0.12`
+Example: `Fix auth module | 2 agents | 34% | $0.12`

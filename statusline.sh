@@ -44,7 +44,7 @@ if [ -d /tmp/moat-agents ]; then
   done
 fi
 if [ "$agent_count" -gt 0 ]; then
-  parts+=("${agent_count}ag")
+  parts+=("${agent_count} agents")
 fi
 
 # Context usage
