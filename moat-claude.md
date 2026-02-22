@@ -68,3 +68,34 @@ Do not skip quality gates. If tests or diagnostics fail, fix the issues before p
 - Use `run_tests` for structured test output instead of raw CLI.
 - Use `lsp_hover`, `lsp_definition`, `lsp_references`, `lsp_symbols` for code intelligence.
 - Language servers start lazily — first LSP call for a language may take a few seconds.
+
+## Background Agents
+
+Use `agent` to spawn read-only Claude Code agents that run in the background. They can research code, run tests, analyze patterns — without blocking your main session.
+
+**Commands:**
+- `agent run "prompt"` — spawn a background agent
+- `agent run --name research "prompt"` — spawn with a friendly name
+- `agent list` — show all agents (id, name, pid, status, prompt snippet)
+- `agent log <id>` — show agent output (supports partial ID matching like Docker)
+- `agent kill <id>` — terminate an agent
+- `agent kill --all` — terminate all agents
+
+**Agents are read-only** — they can read files, search code, run tests and diagnostics, and use LSP tools, but they cannot edit or write files. This prevents conflicts with your main session.
+
+**Use cases:**
+- Run tests in the background while you keep coding: `agent run "run all tests and summarize failures"`
+- Research unfamiliar code: `agent run --name research "explain the authentication flow in this codebase"`
+- Analyze patterns: `agent run "find all API endpoints and list their HTTP methods"`
+- Check for issues: `agent run "run diagnostics and list all type errors"`
+
+## Status Line
+
+The status line at the bottom of the screen shows:
+- **Model** — which Claude model is active (e.g. Opus)
+- **task** — current beads task (in-progress or most recent open)
+- **agents** — number of running background agents (hidden when 0)
+- **ctx** — context window usage percentage
+- **$** — session cost so far
+
+Example: `Opus  |  task: Fix auth module  |  agents: 2  |  ctx: 34%  |  $0.12`

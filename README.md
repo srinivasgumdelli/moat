@@ -140,6 +140,20 @@ Moat is designed to be **fail-closed** — if a process ignores proxy settings o
 - Run `moat doctor` to verify your setup is correctly configured
 - Keep Docker Desktop and your host kernel updated (relevant when `docker: true`)
 
+## Background agents
+
+Spawn read-only Claude Code agents that run in the background — research code, run tests, analyze patterns — without blocking your main session:
+
+```bash
+agent run "run all tests and summarize failures"
+agent run --name research "explain the auth flow"
+agent list                    # see all agents
+agent log <id>                # view output
+agent kill <id>               # terminate
+```
+
+Agents are read-only by default (no file writes), so they can't conflict with your main session. The status line shows running agent count alongside model, task, context usage, and cost.
+
 ## IDE features
 
 The container includes IDE-level tooling for TypeScript, Python, and Go:

@@ -384,6 +384,80 @@ Language servers (typescript-language-server, pyright, gopls) start lazily on fi
 
 **Auto-diagnostics**: After every file edit, fast linters run automatically (eslint for JS/TS, ruff for Python, go vet for Go) and inject results into Claude's context.
 
+### Background agents
+
+Spawn read-only Claude Code agents that run in the background while you keep working in the main session. Agents can search code, run tests, analyze patterns, and use all IDE tools — but cannot edit or write files, so they never conflict with your main session.
+
+#### Commands
+
+```bash
+agent run "prompt"                   # spawn a background agent
+agent run --name research "prompt"   # spawn with a friendly name
+agent list                           # show all agents
+agent log <id>                       # view agent output
+agent kill <id>                      # terminate an agent
+agent kill --all                     # terminate all agents
+```
+
+#### How it works
+
+Each agent spawns a `claude -p` process in the background with a restricted tool set (read-only: `Read`, `Grep`, `Glob`, `Task`, `WebFetch`, `WebSearch`, plus all `ide-tools` and `ide-lsp` MCP tools). Agents are tracked in `/tmp/moat-agents/<id>/` with a `meta.json` file containing id, name, prompt, pid, status, and start time.
+
+Agent IDs are short hex strings. `agent log` and `agent kill` support partial ID matching (like Docker) — you only need to type enough characters to be unambiguous.
+
+#### Use cases
+
+- **Run tests in the background**: `agent run "run all tests and summarize failures"`
+- **Research unfamiliar code**: `agent run --name research "explain the authentication flow in this codebase"`
+- **Analyze patterns**: `agent run "find all API endpoints and list their HTTP methods and request/response types"`
+- **Check for issues**: `agent run "run diagnostics and list all type errors with suggested fixes"`
+- **Lint or review**: `agent run "review the changes in the last 3 commits for potential bugs"`
+
+#### Example session
+
+```bash
+# Spawn two agents while you keep working
+agent run --name tests "run all tests, report failures with file paths and line numbers"
+# => a1b2c3d4  tests  (pid 12345)
+
+agent run --name auth "explain how JWT authentication works in this codebase"
+# => e5f6a7b8  auth  (pid 12346)
+
+# Check what's running
+agent list
+# ID         NAME             PID      STATUS   PROMPT
+# ---        ---              ---      ---      ---
+# a1b2c3d4   tests            12345    running  run all tests, report failures with file...
+# e5f6a7b8   auth             12346    running  explain how JWT authentication works in...
+
+# Read output when done
+agent log a1b2
+# (shows full output from the tests agent)
+
+# Clean up
+agent kill --all
+```
+
+### Status line
+
+The status line at the bottom of the Claude Code REPL shows live session information:
+
+```
+Opus  |  task: Fix auth module  |  agents: 2  |  ctx: 34%  |  $0.12
+```
+
+| Field | Description |
+|-------|-------------|
+| **Model** | Active Claude model (e.g. Opus, Sonnet) |
+| **task** | Current beads task — shows in-progress task first, falls back to most recent open task. Truncated to 30 characters. |
+| **agents** | Number of running background agents. Hidden when 0. |
+| **ctx** | Context window usage as a percentage |
+| **$** | Cumulative session cost in USD |
+
+Fields are omitted gracefully — if there's no active beads task, that segment is skipped; if no agents are running, that segment is hidden.
+
+The status line is powered by `/home/node/.claude/hooks/statusline.sh`, configured via the `statusLine` setting in Claude Code's `settings.json`.
+
 ## File layout
 
 ```
