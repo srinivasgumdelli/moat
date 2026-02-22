@@ -80,6 +80,12 @@ if (subcommand === 'doctor') {
   process.exit(0);
 }
 
+if (subcommand === 'ps') {
+  const { ps } = await import('./lib/ps.mjs');
+  await ps();
+  process.exit(0);
+}
+
 if (subcommand === 'down') {
   const allFlag = subcommandArgs.includes('--all');
   await down(REPO_DIR, { all: allFlag, workspace });
