@@ -92,10 +92,9 @@ Use `agent` to spawn read-only Claude Code agents that run in the background. Th
 ## Status Line
 
 The status line at the bottom of the screen shows:
-- **Model** — which Claude model is active (e.g. Opus)
 - **task** — current beads task (in-progress or most recent open)
-- **agents** — number of running background agents (hidden when 0)
+- **agents** — running background agent count (hidden when 0)
 - **ctx** — context window usage percentage
 - **$** — session cost so far
 
-Example: `Opus  |  task: Fix auth module  |  agents: 2  |  ctx: 34%  |  $0.12`
+Example: `Fix auth module | 2ag | 34% | $0.12`

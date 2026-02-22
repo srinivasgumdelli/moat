@@ -1,6 +1,6 @@
 #!/bin/bash
 # Claude Code status line hook for Moat
-# Reads JSON from stdin, enriches with beads task + agent count, outputs formatted line.
+# Reads JSON from stdin, enriches with beads task + agent count, outputs compact line.
 
 # No set -euo pipefail — status line must be resilient; partial output beats no output.
 
@@ -8,32 +8,25 @@
 input=$(cat 2>/dev/null || true)
 
 # Extract fields from Claude Code's JSON (all optional — fail gracefully)
-model=$(echo "$input" | jq -r '.model.display_name // empty' 2>/dev/null || true)
 ctx_pct=$(echo "$input" | jq -r '.context_window.used_percentage // empty' 2>/dev/null || true)
 cost=$(echo "$input" | jq -r '.cost.total_cost_usd // empty' 2>/dev/null || true)
 
 parts=()
 
-# Model name
-if [ -n "$model" ]; then
-  parts+=("$model")
-fi
-
 # Current beads task — parse issues.jsonl directly
 task_title=""
 if [ -f /workspace/.beads/issues.jsonl ]; then
-  # Try in_progress first, then fall back to most recent open
   task_title=$(jq -r 'select(.status == "in_progress") | .title' /workspace/.beads/issues.jsonl 2>/dev/null | tail -1 || true)
   if [ -z "$task_title" ]; then
     task_title=$(jq -r 'select(.status == "open") | .title' /workspace/.beads/issues.jsonl 2>/dev/null | tail -1 || true)
   fi
 fi
 if [ -n "$task_title" ]; then
-  # Truncate to 30 chars
-  if [ ${#task_title} -gt 30 ]; then
-    task_title="${task_title:0:27}..."
+  # Truncate to 20 chars for narrow screens
+  if [ ${#task_title} -gt 20 ]; then
+    task_title="${task_title:0:17}..."
   fi
-  parts+=("task: $task_title")
+  parts+=("$task_title")
 fi
 
 # Running agent count
@@ -51,13 +44,13 @@ if [ -d /tmp/moat-agents ]; then
   done
 fi
 if [ "$agent_count" -gt 0 ]; then
-  parts+=("agents: $agent_count")
+  parts+=("${agent_count}ag")
 fi
 
 # Context usage
 if [ -n "$ctx_pct" ]; then
   ctx_int=$(printf '%.0f' "$ctx_pct" 2>/dev/null || echo "$ctx_pct")
-  parts+=("ctx: ${ctx_int}%")
+  parts+=("${ctx_int}%")
 fi
 
 # Cost
@@ -69,7 +62,7 @@ fi
 output=""
 for i in "${!parts[@]}"; do
   if [ "$i" -gt 0 ]; then
-    output+="  |  "
+    output+=" | "
   fi
   output+="${parts[$i]}"
 done
