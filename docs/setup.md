@@ -34,12 +34,18 @@ This is a **fail-closed** design: even if a process inside the container ignores
                  +-----------+
                     |       |
        sandbox network     extnet --> host.docker.internal:9876
-                    |                          |
-              +-----------+             +-----------+
-              | devcontainer |          | tool-proxy |  (runs on host)
-              | Claude Code  |          | gh/git ops |  (has credentials)
-              | git/gh wrappers        +-----------+
-              +-----------+
+              |     |                          |
+              |     |                   +-----------+
+              |     |                   | tool-proxy |  (runs on host)
+              |     |                   | gh/git ops |  (has credentials)
+              |     |                   | agent mgmt |  (docker run/logs/rm)
+              |     |                   +-----------+
+              |     |
+    +-----------+   +-------------------+
+    | devcontainer |   | moat-agent-<id> |  (0..N)
+    | Claude Code  |   | claude -p "..." |
+    | git/gh wrappers  | workspace :ro   |
+    +-----------+      +------------------+
 ```
 
 Key properties:
@@ -76,8 +82,12 @@ Key properties:
 ├── devcontainer.json      # DevContainer CLI configuration
 ├── docker-compose.yml     # Two-service setup (squid + devcontainer)
 ├── Dockerfile             # DevContainer image (node:22, Claude Code, git-delta)
+├── Dockerfile.agent       # Minimal agent container image (node:22-slim, Claude Code)
+├── agent-entrypoint.sh    # Agent container entrypoint (reads MOAT_AGENT_PROMPT)
 ├── squid.conf             # Squid proxy domain whitelist
-├── tool-proxy.mjs         # Host-side Node.js server for gh/git credential isolation
+├── tool-proxy.mjs         # Host-side Node.js server for gh/git credential isolation + agent management
+├── agent.sh               # In-container CLI for spawning/managing background agents
+├── statusline.sh          # Claude Code status line hook (task, agents, ctx, cost)
 ├── *-proxy-wrapper.sh     # Container-side tool wrappers (git, gh, terraform, etc.)
 ├── install.sh             # Unified installer (curl-pipeable, auto-detects context)
 ├── .proxy-token           # Copied from DATA_DIR before builds (in .gitignore)
@@ -198,7 +208,7 @@ No environment variables, env files, or runtime config passing needed.
 
 ### tool-proxy.mjs
 
-Single-file Node.js server with zero dependencies (uses `node:http`, `node:child_process`, `node:fs`):
+Single-file Node.js server with zero dependencies (uses `node:http`, `node:child_process`, `node:fs`, `node:crypto`):
 
 - **Started with**: `node tool-proxy.mjs --workspace /path/to/host/workspace`
 - **Binds to**: `127.0.0.1:9876` (localhost only — not reachable from the network, but accessible to Docker Desktop's `host.docker.internal` gateway)
@@ -208,6 +218,15 @@ Single-file Node.js server with zero dependencies (uses `node:http`, `node:child
   - `GET /health` — no auth required, returns `{ success: true }`
   - `POST /git` — bearer auth, body `{ args[], cwd }`, translates cwd, runs `git` on the host
   - `POST /gh` — bearer auth, body `{ args[], cwd? }`, translates cwd, runs `gh` with the host's `GITHUB_TOKEN` (from `gh auth token`, cached 10 min)
+  - `POST /terraform` — bearer auth, plan-only allowlist enforcement
+  - `POST /kubectl` — bearer auth, read-only allowlist enforcement
+  - `POST /aws` — bearer auth, read-only verb filtering
+  - `POST /agent/spawn` — body `{ prompt, name?, workspace_hash }`, spawns agent container, returns `{ id, name }`
+  - `GET /agent/list?workspace_hash=<hash>` — lists agents with reconciled Docker status
+  - `GET /agent/log/<id>?workspace_hash=<hash>` — returns `docker logs` output
+  - `POST /agent/kill/<id>` — body `{ workspace_hash }`, stops and removes container (supports `--all`)
+  - `GET /agent/results?workspace_hash=<hash>` — returns output from completed agents, cleans up containers
+  - `GET /agent/wait/<id>?workspace_hash=<hash>` — polls until container exits, returns logs (5 min timeout)
 - **Response format**: `{ success, stdout, stderr, exitCode }`
 
 ### git-proxy-wrapper.sh
@@ -267,12 +286,13 @@ moat update
 3. Ensures `~/.moat/data/` exists with a proxy token (auto-generates or migrates from old installs)
 4. If no `.moat.yml` exists, scans dependency files and offers to create one (auto-detection)
 5. Generates compose override files from `.moat.yml` (services, squid domains, extra dirs)
-6. Tool proxy starts on the host (`127.0.0.1:9876`), reads token via `MOAT_TOKEN_FILE` env var
-7. Checks for a running container — reuses if workspace and extra directories match, recreates otherwise
-8. `devcontainer up` starts squid + devcontainer (if needed), waits for squid health check
-9. Copies `~/.claude/CLAUDE.md` into the container (if it exists on the host)
-10. Claude Code launches with `--dangerously-skip-permissions` via `devcontainer exec`
-11. On exit: synchronous cleanup kills proxy and terminates any Mutagen sync sessions (containers kept running for reuse)
+6. Builds `moat-agent` Docker image if not already cached (for background agents)
+7. Tool proxy starts on the host (`127.0.0.1:9876`), reads token via `MOAT_TOKEN_FILE` env var
+8. Checks for a running container — reuses if workspace and extra directories match, recreates otherwise
+9. `devcontainer up` starts squid + devcontainer (if needed), waits for squid health check
+10. Copies `~/.claude/CLAUDE.md` into the container (if it exists on the host)
+11. Claude Code launches with `--dangerously-skip-permissions` via `devcontainer exec`
+12. On exit: synchronous cleanup kills proxy and terminates any Mutagen sync sessions (containers kept running for reuse)
 
 ### Update
 
@@ -280,7 +300,7 @@ moat update
 
 ### Teardown
 
-Automatic on exit (bash EXIT trap). The script also cleans up any previous session on startup.
+Automatic on exit. The `teardown()` function in `lib/container.mjs` first stops all agent containers for the workspace (by Docker label `moat.workspace_hash`), then tears down the compose project. `moat down --all` removes all `moat-*` containers including agents.
 
 ### Rebuild (after config changes)
 
@@ -399,6 +419,7 @@ Set in `docker-compose.yml` via `deploy.resources.limits`:
 | Resource limits | CPU/memory caps via docker-compose | Resource exhaustion on host |
 | Container reuse with rebuild | Recreated when workspace/mounts change | Stale state from previous workspace |
 | Plan mode | Read-only tool restrictions | Unintended writes during research/planning |
+| Agent container isolation | Agents run in separate containers with workspace mounted read-only, 4GB/2CPU limits | Agents modifying workspace, resource exhaustion |
 | Podman (rootless, daemonless) | No host socket, containers inherit squid, no host filesystem access | Docker escape, network bypass |
 
 ## Docker Access (Podman)

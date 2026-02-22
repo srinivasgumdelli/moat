@@ -509,6 +509,59 @@ Podman solves this architecturally: it's daemonless and runs containers as child
 
 ---
 
+## Phase 8: Dockerized Background Agents (Implemented)
+
+### What Changed
+
+Background agents moved from in-process `claude -p` subprocesses inside the devcontainer to isolated Docker containers managed by the host-side tool proxy. Each agent runs in its own `moat-agent-<id>` container on the same sandbox network with the workspace mounted read-only.
+
+### Why Containers
+
+In-process agents shared the devcontainer's filesystem (not truly read-only), competed for resources (CPU/memory within the devcontainer's 4CPU/8GB limits), and couldn't be isolated from each other. Dockerized agents get true filesystem isolation (`:ro` mount), independent resource limits (4GB/2CPU each), and lifecycle management via the host.
+
+### Architecture
+
+```
+devcontainer                    host                        agent containers
+┌─────────────┐                ┌──────────────┐            ┌─────────────────┐
+│ agent.sh    │──HTTP──────────▶ tool-proxy   │──docker──▶ │ moat-agent-<id> │
+│ (curl+jq)   │                │ :9876        │   run      │ claude -p "..."  │
+│              │                │              │            │ workspace :ro    │
+│ statusline  │◀───agent count─│ /agent/*     │            │ sandbox network  │
+└─────────────┘                └──────────────┘            └─────────────────┘
+```
+
+### Files Changed
+
+| File | Changes |
+|------|---------|
+| `Dockerfile.agent` | **New** — minimal agent image (node:22-slim, git, curl, jq, Claude Code CLI, proxy wrappers) |
+| `agent-entrypoint.sh` | **New** — reads `MOAT_AGENT_PROMPT` env var, runs `claude -p` with allowed tools |
+| `tool-proxy.mjs` | **Extended** — 6 agent endpoints (spawn, list, log, kill, results, wait) + helpers |
+| `agent.sh` | **Rewritten** — HTTP client (curl+jq) instead of local process manager |
+| `statusline.sh` | **Simplified** — uses `agent count` instead of PID scanning |
+| `moat.mjs` | **Extended** — builds `moat-agent` image on first launch |
+| `lib/container.mjs` | **Extended** — `stopAgentContainers()` called during teardown |
+| `moat-claude.md` | **Updated** — documents `results`, `wait`, `count` commands |
+
+### Agent Container Properties
+
+- **Image**: `moat-agent` (built once, cached)
+- **Network**: `moat-<hash>_sandbox` (same as devcontainer — traffic goes through squid)
+- **Workspace**: bind-mounted read-only
+- **Resources**: 4GB memory, 2 CPUs per agent
+- **Tools**: Read, Grep, Glob, Task, WebFetch, WebSearch (read-only)
+- **Labels**: `moat.agent=true`, `moat.agent.id=<id>`, `moat.workspace_hash=<hash>`
+- **Metadata**: `~/.moat/data/workspaces/<hash>/agents/<id>/meta.json`
+
+### New Commands
+
+- `agent results` — collects output from all completed/failed agents, cleans up containers and metadata
+- `agent wait <id>` — blocks until agent exits, returns output
+- `agent count` — returns count of running agents (used by statusline)
+
+---
+
 ## Implementation Order
 
 | Step | What | Files |

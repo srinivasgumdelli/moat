@@ -386,24 +386,52 @@ Language servers (typescript-language-server, pyright, gopls) start lazily on fi
 
 ### Background agents
 
-Spawn read-only Claude Code agents that run in the background while you keep working in the main session. Agents can search code, run tests, analyze patterns, and use all IDE tools — but cannot edit or write files, so they never conflict with your main session.
+Spawn read-only Claude Code agents that run in isolated Docker containers while you keep working in the main session. Agents can search code, run tests, and analyze patterns — but cannot edit or write files, so they never conflict with your main session.
 
 #### Commands
 
 ```bash
 agent run "prompt"                   # spawn a background agent
 agent run --name research "prompt"   # spawn with a friendly name
-agent list                           # show all agents
+agent list                           # show all agents and their status
 agent log <id>                       # view agent output
 agent kill <id>                      # terminate an agent
 agent kill --all                     # terminate all agents
+agent results                        # get output from all completed agents
+agent wait <id>                      # block until agent finishes
+agent count                          # count running agents (used by statusline)
 ```
 
 #### How it works
 
-Each agent spawns a `claude -p` process in the background with a restricted tool set (read-only: `Read`, `Grep`, `Glob`, `Task`, `WebFetch`, `WebSearch`, plus all `ide-tools` and `ide-lsp` MCP tools). Agents are tracked in `/tmp/moat-agents/<id>/` with a `meta.json` file containing id, name, prompt, pid, status, and start time.
+Each agent runs in its own Docker container (`moat-agent-<id>`) on the same sandbox network as the devcontainer. The workspace is mounted read-only. Agents are restricted to read-only tools (`Read`, `Grep`, `Glob`, `Task`, `WebFetch`, `WebSearch`).
 
-Agent IDs are short hex strings. `agent log` and `agent kill` support partial ID matching (like Docker) — you only need to type enough characters to be unambiguous.
+```
+devcontainer                    host                        agent containers
+┌─────────────┐                ┌──────────────┐            ┌─────────────────┐
+│ agent.sh    │──HTTP──────────▶ tool-proxy   │──docker──▶ │ moat-agent-<id> │
+│ (curl+jq)   │                │ :9876        │   run      │ claude -p "..."  │
+│              │                │              │            │ workspace :ro    │
+│ statusline  │◀───agent count─│ /agent/*     │            │ sandbox network  │
+└─────────────┘                └──────────────┘            └─────────────────┘
+```
+
+The `agent` command inside the container is an HTTP client that talks to the host-side tool proxy. The proxy manages agent containers via Docker: spawning, inspecting, collecting logs, and cleaning up. Agent metadata is stored at `~/.moat/data/workspaces/<hash>/agents/<id>/meta.json` on the host.
+
+Agent IDs are short hex strings. `agent log`, `agent kill`, and `agent wait` support partial ID matching (like Docker) — you only need to type enough characters to be unambiguous.
+
+Agent containers are cleaned up automatically when the devcontainer is torn down (`moat down`).
+
+#### Container properties
+
+| Property | Value |
+|----------|-------|
+| Image | `moat-agent` (built on first `moat` launch) |
+| Network | Same sandbox network as devcontainer |
+| Workspace | Mounted read-only |
+| Resources | 4GB memory, 2 CPUs |
+| Proxy | Traffic through squid (same domain whitelist) |
+| API key | `ANTHROPIC_API_KEY` from host |
 
 #### Use cases
 
@@ -418,23 +446,30 @@ Agent IDs are short hex strings. `agent log` and `agent kill` support partial ID
 ```bash
 # Spawn two agents while you keep working
 agent run --name tests "run all tests, report failures with file paths and line numbers"
-# => a1b2c3d4  tests  (pid 12345)
+# => a1b2c3d4  tests
 
 agent run --name auth "explain how JWT authentication works in this codebase"
-# => e5f6a7b8  auth  (pid 12346)
+# => e5f6a7b8  auth
 
 # Check what's running
 agent list
-# ID         NAME             PID      STATUS   PROMPT
-# ---        ---              ---      ---      ---
-# a1b2c3d4   tests            12345    running  run all tests, report failures with file...
-# e5f6a7b8   auth             12346    running  explain how JWT authentication works in...
+# ID         NAME             STATUS   PROMPT
+# ---        ---              ---      ---
+# a1b2c3d4   tests            running  run all tests, report failures with file...
+# e5f6a7b8   auth             running  explain how JWT authentication works in...
 
-# Read output when done
-agent log a1b2
-# (shows full output from the tests agent)
+# Wait for a specific agent
+agent wait a1b2
+# (blocks until done, then shows output)
 
-# Clean up
+# Or collect all completed results at once
+agent results
+# === tests (a1b2c3d4) — done ===
+# (full output from tests agent)
+# === auth (e5f6a7b8) — done ===
+# (full output from auth agent)
+
+# Clean up running agents
 agent kill --all
 ```
 

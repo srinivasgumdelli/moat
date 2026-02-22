@@ -73,6 +73,8 @@ Do not skip quality gates. If tests or diagnostics fail, fix the issues before p
 
 **Proactively spawn background agents** whenever work can be parallelized. Don't wait to be asked — if a subtask is independent from your main work, fire off an agent for it automatically.
 
+Each agent runs in its own isolated Docker container with the workspace mounted read-only.
+
 Spawn agents automatically for:
 - **Tests** — kick off `agent run all tests and summarize failures` while you keep coding
 - **Diagnostics** — run type-checking/linting in the background after a batch of edits
@@ -82,11 +84,16 @@ Spawn agents automatically for:
 **Commands:**
 - `agent <prompt>` — spawn a background agent (default)
 - `agent --name research <prompt>` — spawn with a friendly name
-- `agent list` — show all agents
+- `agent list` — show all agents and their status
 - `agent log <id>` — show agent output (supports partial ID)
 - `agent kill <id|--all>` — terminate agent(s)
+- `agent results` — get output from all completed agents (auto-cleans up)
+- `agent wait <id>` — block until agent finishes, then show output
+- `agent count` — count running agents (used by statusline)
 
 Agents are read-only — they cannot edit or write files.
+
+**Collecting results:** When the statusline shows 0 agents remaining, call `agent results` to collect output from all completed agents. Consolidate the findings before proceeding — summarize what was learned, note any failures, and integrate relevant information into your current work.
 
 ## Status Line
 

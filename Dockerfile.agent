@@ -1,0 +1,37 @@
+FROM node:22-slim
+
+ARG CLAUDE_CODE_VERSION=2.1.42
+
+# Install minimal tools
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl jq ca-certificates \
+    && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Create workspace directory
+RUN mkdir -p /workspace && chown node:node /workspace
+WORKDIR /workspace
+
+# Install Claude Code via native installer
+USER node
+ENV PATH=/home/node/.local/bin:$PATH
+ENV DISABLE_AUTOUPDATER=1
+RUN curl -fsSL https://claude.ai/install.sh | bash -s ${CLAUDE_CODE_VERSION}
+
+# Force git to use HTTPS instead of SSH (SSH can't traverse HTTP proxy)
+RUN git config --global url."https://github.com/".insteadOf "git@github.com:" && \
+    git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+
+# Install proxy wrapper scripts and token
+USER root
+COPY .proxy-token /etc/tool-proxy-token
+COPY git-proxy-wrapper.sh /usr/local/bin/git
+COPY gh-proxy-wrapper.sh /usr/local/bin/gh
+RUN chmod 644 /etc/tool-proxy-token && \
+    chmod +x /usr/local/bin/git /usr/local/bin/gh
+
+# Create entrypoint script
+COPY agent-entrypoint.sh /usr/local/bin/agent-entrypoint
+RUN chmod +x /usr/local/bin/agent-entrypoint
+
+USER node
+ENTRYPOINT ["/usr/local/bin/agent-entrypoint"]
