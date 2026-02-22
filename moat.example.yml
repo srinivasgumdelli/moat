@@ -35,6 +35,13 @@ env:
 # .alpinelinux.org) are auto-added to the squid whitelist.
 docker: true
 
+# Custom secrets patterns — extend the built-in scanner with project-specific patterns
+# Each entry needs a name (for audit/logging) and a regex (JavaScript syntax).
+# secrets:
+#   patterns:
+#     - name: my-internal-token
+#       regex: "MYCO_[A-Za-z0-9]{32}"
+
 # Extra allowed domains — added to the squid proxy whitelist
 # Use leading dot to match domain + all subdomains (e.g., .crates.io matches crates.io and *.crates.io)
 # Base domains (github, npm, anthropic, pypi, golang, etc.) are always allowed.

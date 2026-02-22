@@ -455,6 +455,59 @@ else
   fail "scanForSecrets did not detect private key: $SCAN_PK"
 fi
 
+# Test scanForSecrets detects JWT token (new pattern)
+SCAN_JWT=$(node -e "
+  import('./lib/secrets.mjs').then(m => {
+    const r = m.scanForSecrets('token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc');
+    console.log(JSON.stringify(r));
+  });
+" 2>/dev/null)
+if echo "$SCAN_JWT" | jq -e '.[0].pattern' 2>/dev/null | grep -q 'jwt-token'; then
+  pass "scanForSecrets detects JWT token"
+else
+  fail "scanForSecrets did not detect JWT token: $SCAN_JWT"
+fi
+
+# Test scanForSecrets detects GCP service account key
+SCAN_GCP=$(node -e "
+  import('./lib/secrets.mjs').then(m => {
+    const r = m.scanForSecrets('{\"type\": \"service_account\", \"project_id\": \"test\"}');
+    console.log(JSON.stringify(r));
+  });
+" 2>/dev/null)
+if echo "$SCAN_GCP" | jq -e '.[0].pattern' 2>/dev/null | grep -q 'gcp-service-key'; then
+  pass "scanForSecrets detects GCP service account key"
+else
+  fail "scanForSecrets did not detect GCP key: $SCAN_GCP"
+fi
+
+# Test loadCustomPatterns with temp .moat.yml
+TEMP_SECRETS_DIR=$(mktemp -d)
+cat > "$TEMP_SECRETS_DIR/.moat.yml" << 'YAMLEOF'
+secrets:
+  patterns:
+    - name: test-custom
+      regex: "CUSTOM_[A-Z]{8}"
+YAMLEOF
+CUSTOM_RESULT=$(node -e "
+  import('./lib/secrets.mjs').then(m => {
+    const patterns = m.loadCustomPatterns('$TEMP_SECRETS_DIR');
+    const custom = patterns.find(p => p.name === 'test-custom');
+    if (custom) {
+      const hits = m.scanForSecrets('found CUSTOM_ABCDEFGH here', patterns);
+      console.log(JSON.stringify(hits));
+    } else {
+      console.log('no-custom');
+    }
+  });
+" 2>/dev/null)
+rm -rf "$TEMP_SECRETS_DIR"
+if echo "$CUSTOM_RESULT" | jq -e '.[0].pattern' 2>/dev/null | grep -q 'test-custom'; then
+  pass "loadCustomPatterns loads custom pattern from .moat.yml"
+else
+  fail "loadCustomPatterns did not load custom pattern: $CUSTOM_RESULT"
+fi
+
 # Warn mode (default): send request with fake AWS key in args, expect HTTP 200 (not blocked)
 SECRETS_RESPONSE=$(curl -s \
   -X POST "http://127.0.0.1:${PROXY_PORT}/git" \

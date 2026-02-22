@@ -11,7 +11,7 @@ import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { scanForSecrets, isBlockingMode } from './lib/secrets.mjs';
+import { scanForSecrets, isBlockingMode, loadCustomPatterns } from './lib/secrets.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.TOOL_PROXY_PORT || '9876');
@@ -26,8 +26,15 @@ if (!DATA_DIR) {
   process.exit(1);
 }
 
+// Parse --workspace argument (host workspace path for reading .moat.yml custom patterns)
+const workspaceIdx = process.argv.indexOf('--workspace');
+const WORKSPACE_PATH = workspaceIdx !== -1 ? process.argv[workspaceIdx + 1] : null;
+
 const WORKSPACES_DIR = join(DATA_DIR, 'workspaces');
 const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10 MB
+
+// Load custom secret patterns from workspace's .moat.yml (if available)
+const customSecretPatterns = WORKSPACE_PATH ? loadCustomPatterns(WORKSPACE_PATH) : null;
 
 // Multi-workspace path mappings: { hash: { "/workspace": hostPath, ... } }
 let workspaceMappings = {};
@@ -329,7 +336,7 @@ function auditEmit(wsHash, type, payload = {}) {
  */
 function secretsPreScan(endpoint, args, wsHash, res) {
   const text = args.join(' ');
-  const hits = scanForSecrets(text);
+  const hits = scanForSecrets(text, customSecretPatterns);
   if (hits.length === 0) return false;
 
   for (const hit of hits) {
@@ -352,7 +359,7 @@ function secretsPreScan(endpoint, args, wsHash, res) {
  */
 function secretsPostScan(endpoint, result, wsHash, res) {
   const text = (result.stdout || '') + '\n' + (result.stderr || '');
-  const hits = scanForSecrets(text);
+  const hits = scanForSecrets(text, customSecretPatterns);
   if (hits.length === 0) return false;
 
   for (const hit of hits) {

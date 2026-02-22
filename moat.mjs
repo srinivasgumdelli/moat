@@ -311,7 +311,7 @@ try {
 }
 
 // Start or reuse tool proxy
-const proxyOk = await startProxy(REPO_DIR, DATA_DIR);
+const proxyOk = await startProxy(REPO_DIR, DATA_DIR, { workspace });
 if (!proxyOk) {
   process.exit(1);
 }
