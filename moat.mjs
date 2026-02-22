@@ -157,8 +157,9 @@ const mcpDomains = extractMcpDomains(hostMcpServers);
 
 // Extract external HTTP MCP servers to proxy through tool-proxy (auth stays on host)
 const httpMcpServers = extractHttpMcpServers(hostMcpServers);
+// Always write mcp-servers.json (even empty) to clear stale configs from previous runs
+writeFileSync(join(DATA_DIR, 'mcp-servers.json'), JSON.stringify(httpMcpServers, null, 2) + '\n');
 if (Object.keys(httpMcpServers).length > 0) {
-  writeFileSync(join(DATA_DIR, 'mcp-servers.json'), JSON.stringify(httpMcpServers, null, 2) + '\n');
   log(`Proxying ${Object.keys(httpMcpServers).length} HTTP MCP server${Object.keys(httpMcpServers).length === 1 ? '' : 's'} through tool-proxy ${DIM}(${Object.keys(httpMcpServers).join(', ')})${RESET}`);
 }
 
