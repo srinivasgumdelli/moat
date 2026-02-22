@@ -133,8 +133,10 @@ RUN mkdir -p /home/node/.config/containers && \
     pip3 install --break-system-packages podman-compose
 
 # Force git to use HTTPS instead of SSH (SSH can't traverse HTTP proxy)
+# Set template dir so pre-commit secrets scan hook is installed in new/existing repos
 RUN git config --global url."https://github.com/".insteadOf "git@github.com:" && \
-    git config --global url."https://github.com/".insteadOf "ssh://git@github.com/"
+    git config --global url."https://github.com/".insteadOf "ssh://git@github.com/" && \
+    git config --global init.templateDir /usr/local/share/git-core/templates
 
 # Configure Beads hooks, commands, IDE tools, and MCP servers for Claude Code
 RUN bd setup claude && \
@@ -164,6 +166,10 @@ RUN chmod 644 /etc/tool-proxy-token && \
 # Copy verification script
 COPY verify.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/verify.sh
+
+# Install secrets scanning pre-commit hook (global git template)
+COPY secrets-scan.sh /usr/local/share/git-core/templates/hooks/pre-commit
+RUN chmod +x /usr/local/share/git-core/templates/hooks/pre-commit
 
 # Copy agent manager script
 COPY agent.sh /usr/local/bin/agent

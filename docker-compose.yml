@@ -1,7 +1,6 @@
 services:
   squid:
     image: ubuntu/squid:latest
-    platform: linux/arm64
     networks:
       sandbox:
       extnet:

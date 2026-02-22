@@ -6,8 +6,9 @@
 
 import http from 'node:http';
 import { spawn, execSync } from 'node:child_process';
-import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, rmSync, unlinkSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -25,6 +26,7 @@ if (!DATA_DIR) {
 }
 
 const WORKSPACES_DIR = join(DATA_DIR, 'workspaces');
+const MAX_BODY_SIZE = 10 * 1024 * 1024; // 10 MB
 
 // Multi-workspace path mappings: { hash: { "/workspace": hostPath, ... } }
 let workspaceMappings = {};
@@ -146,12 +148,32 @@ function validateKubectl(args) {
   return { allowed: true };
 }
 
-const AWS_BLOCKED_VERBS = new Set([
-  'create', 'delete', 'terminate', 'remove', 'put', 'update', 'run',
-  'start', 'stop', 'reboot', 'modify', 'release', 'deregister',
-  'revoke', 'disable', 'enable', 'attach', 'detach', 'associate',
-  'disassociate', 'import', 'export', 'invoke', 'publish', 'send',
-  'execute', 'cancel', 'reset', 'restore',
+// AWS: allowlist of read-only verb prefixes (safer than a blocklist)
+const AWS_ALLOWED_VERBS = new Set([
+  'describe', 'list', 'get', 'lookup', 'search', 'check', 'detect',
+  'estimate', 'forecast', 'preview', 'query', 'scan', 'select',
+  'test', 'validate', 'verify', 'batch-get', 'batch-describe',
+]);
+
+// AWS actions that are safe despite not matching allowed verb prefixes
+const AWS_ALLOWED_ACTIONS = new Set([
+  'sts get-caller-identity',
+  'sts get-session-token',
+  'sts get-access-key-info',
+  's3 ls',
+  's3 cp',               // read direction determined by args, but commonly needed
+  's3api head-object',
+  's3api head-bucket',
+  'iam generate-credential-report',
+  'ec2 wait',
+  'cloudwatch wait',
+  'logs tail',
+  'logs filter-log-events',
+  'logs start-query',     // starts an async query (read-only)
+  'logs stop-query',
+  'logs get-query-results',
+  'cloudformation detect-stack-drift',
+  'cloudformation detect-stack-resource-drift',
 ]);
 
 function validateAws(args) {
@@ -161,13 +183,16 @@ function validateAws(args) {
   if (nonFlagArgs.length < 2) return { allowed: true }; // just service name or help
   const service = nonFlagArgs[0];
   const action = nonFlagArgs[1];
-  // Allow sts get-caller-identity, s3 ls, s3api list-buckets, etc.
-  // Block based on the verb prefix of the action
-  const verb = action.split('-')[0];
-  if (AWS_BLOCKED_VERBS.has(verb)) {
-    return { allowed: false, reason: `aws ${service} ${action} is blocked by Moat (read-only mode)` };
+  // Check explicit service+action allowlist first
+  if (AWS_ALLOWED_ACTIONS.has(`${service} ${action}`)) {
+    return { allowed: true };
   }
-  return { allowed: true };
+  // Check verb prefix against allowed read-only verbs
+  const verb = action.split('-')[0];
+  if (AWS_ALLOWED_VERBS.has(verb)) {
+    return { allowed: true };
+  }
+  return { allowed: false, reason: `aws ${service} ${action} is blocked by Moat (read-only mode)` };
 }
 
 // Check if a path is a known container mount point
@@ -238,9 +263,14 @@ function executeCommand(command, args, options = {}) {
 }
 
 function readBody(req) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     let data = '';
-    req.on('data', (chunk) => { data += chunk; });
+    let size = 0;
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > MAX_BODY_SIZE) { req.destroy(); reject(new Error('Body too large')); return; }
+      data += chunk;
+    });
     req.on('end', () => {
       try { resolve(JSON.parse(data)); }
       catch { resolve(null); }
@@ -249,9 +279,14 @@ function readBody(req) {
 }
 
 function readRawBody(req) {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
     const chunks = [];
-    req.on('data', (chunk) => { chunks.push(chunk); });
+    let size = 0;
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size > MAX_BODY_SIZE) { req.destroy(); reject(new Error('Body too large')); return; }
+      chunks.push(chunk);
+    });
     req.on('end', () => { resolve(Buffer.concat(chunks)); });
   });
 }
@@ -355,6 +390,13 @@ const server = http.createServer(async (req, res) => {
 
   if (req.url === '/health' && req.method === 'GET') {
     sendJson(res, 200, { success: true });
+    return;
+  }
+
+  // Reject oversized requests early via content-length header
+  const contentLength = parseInt(req.headers['content-length'] || '0', 10);
+  if (contentLength > MAX_BODY_SIZE) {
+    sendJson(res, 413, { success: false, error: 'Request body too large' });
     return;
   }
 
@@ -600,6 +642,12 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
+      const apiKey = process.env.ANTHROPIC_API_KEY || '';
+      if (!apiKey) {
+        sendJson(res, 400, { success: false, error: 'ANTHROPIC_API_KEY not set on host — cannot spawn agent.' });
+        return;
+      }
+
       const mappings = getMappingsForHash(wsHash);
       const hostWorkspace = mappings['/workspace'];
       if (!hostWorkspace) {
@@ -612,6 +660,10 @@ const server = http.createServer(async (req, res) => {
       const network = `moat-${wsHash}_sandbox`;
       const tools = body.tools || 'Read,Grep,Glob,Task,WebFetch,WebSearch';
 
+      // Write API key to a temp env file (avoids exposing it in docker inspect / /proc)
+      const envFile = join(tmpdir(), `moat-agent-${id}.env`);
+      writeFileSync(envFile, `ANTHROPIC_API_KEY=${apiKey}\n`, { mode: 0o600 });
+
       const dockerArgs = [
         'run', '--detach',
         '--name', `moat-agent-${id}`,
@@ -621,13 +673,13 @@ const server = http.createServer(async (req, res) => {
         '--label', `moat.workspace_hash=${wsHash}`,
         '--memory', '4g', '--cpus', '2',
         '--add-host', 'host.docker.internal:host-gateway',
+        '--env-file', envFile,
         '--env', `HTTP_PROXY=http://squid:3128`,
         '--env', `HTTPS_PROXY=http://squid:3128`,
         '--env', `http_proxy=http://squid:3128`,
         '--env', `https_proxy=http://squid:3128`,
         '--env', `NO_PROXY=localhost,127.0.0.1`,
         '--env', `no_proxy=localhost,127.0.0.1`,
-        '--env', `ANTHROPIC_API_KEY=${process.env.ANTHROPIC_API_KEY || ''}`,
         '--env', `MOAT_WORKSPACE_HASH=${wsHash}`,
         '--env', `MOAT_AGENT_PROMPT=${body.prompt}`,
         '--env', `MOAT_AGENT_TOOLS=${tools}`,
@@ -636,6 +688,8 @@ const server = http.createServer(async (req, res) => {
       ];
 
       const result = await executeCommand('docker', dockerArgs);
+      // Clean up temp env file immediately after docker reads it
+      try { unlinkSync(envFile); } catch {}
       if (!result.success) {
         process.stderr.write(`[tool-proxy] agent/spawn FAILED: ${result.stderr}\n`);
         sendJson(res, 500, { success: false, error: result.stderr.trim() });

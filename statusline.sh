@@ -13,6 +13,12 @@ cost=$(echo "$input" | jq -r '.cost.total_cost_usd // empty' 2>/dev/null || true
 
 parts=()
 
+# Moat version (set by moat.mjs via containerEnv)
+moat_ver="${MOAT_VERSION:-}"
+if [ -n "$moat_ver" ]; then
+  parts+=("moat:${moat_ver}")
+fi
+
 # Current beads task — parse issues.jsonl directly
 task_title=""
 if [ -f /workspace/.beads/issues.jsonl ]; then
@@ -29,8 +35,8 @@ if [ -n "$task_title" ]; then
   parts+=("$task_title")
 fi
 
-# Running agent count (via tool-proxy)
-agent_count=$(agent count 2>/dev/null || echo "0")
+# Running agent count (via tool-proxy, 2s timeout to avoid blocking statusline)
+agent_count=$(timeout 2 agent count 2>/dev/null || echo "0")
 if [ "$agent_count" -gt 0 ]; then
   parts+=("${agent_count} agents")
 fi

@@ -80,6 +80,28 @@ if (subcommand === 'doctor') {
   process.exit(0);
 }
 
+if (subcommand === 'ps') {
+  const { ps } = await import('./lib/ps.mjs');
+  await ps();
+  process.exit(0);
+}
+
+if (subcommand === 'log') {
+  const { PROXY_LOG } = await import('./lib/proxy.mjs');
+  const followFlag = subcommandArgs.includes('--follow') || subcommandArgs.includes('-f');
+  if (!existsSync(PROXY_LOG)) {
+    err(`No log file at ${PROXY_LOG}`);
+    process.exit(1);
+  }
+  if (followFlag) {
+    spawnSync('tail', ['-f', PROXY_LOG], { stdio: 'inherit' });
+  } else {
+    const lines = subcommandArgs.find(a => /^\d+$/.test(a)) || '50';
+    spawnSync('tail', ['-n', lines, PROXY_LOG], { stdio: 'inherit' });
+  }
+  process.exit(0);
+}
+
 if (subcommand === 'down') {
   const allFlag = subcommandArgs.includes('--all');
   await down(REPO_DIR, { all: allFlag, workspace });
@@ -121,6 +143,14 @@ if (subcommand === 'init') {
 }
 
 // --- Main flow ---
+
+// Compute moat version from git (short SHA + dirty flag)
+let moatVersion = 'unknown';
+try {
+  const sha = execSync('git -C ' + JSON.stringify(REPO_DIR) + ' rev-parse --short HEAD', { encoding: 'utf-8' }).trim();
+  const dirty = execSync('git -C ' + JSON.stringify(REPO_DIR) + ' status --porcelain', { encoding: 'utf-8' }).trim();
+  moatVersion = sha + (dirty ? '-dirty' : '');
+} catch {}
 
 process.env.MOAT_WORKSPACE = workspace;
 
@@ -211,6 +241,7 @@ const devcontainerConfig = {
   },
   containerEnv: {
     MOAT_WORKSPACE_HASH: hash,
+    MOAT_VERSION: moatVersion,
   },
   remoteUser: 'node',
   remoteEnv: {
