@@ -86,6 +86,22 @@ if (subcommand === 'ps') {
   process.exit(0);
 }
 
+if (subcommand === 'log') {
+  const { PROXY_LOG } = await import('./lib/proxy.mjs');
+  const followFlag = subcommandArgs.includes('--follow') || subcommandArgs.includes('-f');
+  if (!existsSync(PROXY_LOG)) {
+    err(`No log file at ${PROXY_LOG}`);
+    process.exit(1);
+  }
+  if (followFlag) {
+    spawnSync('tail', ['-f', PROXY_LOG], { stdio: 'inherit' });
+  } else {
+    const lines = subcommandArgs.find(a => /^\d+$/.test(a)) || '50';
+    spawnSync('tail', ['-n', lines, PROXY_LOG], { stdio: 'inherit' });
+  }
+  process.exit(0);
+}
+
 if (subcommand === 'down') {
   const allFlag = subcommandArgs.includes('--all');
   await down(REPO_DIR, { all: allFlag, workspace });
