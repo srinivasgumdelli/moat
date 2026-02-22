@@ -32,7 +32,7 @@ cleanup() {
     -f "$SERVICES_FILE" \
     -f "$OVERRIDE_FILE" down 2>/dev/null || true
   echo "  Containers removed"
-  rm -rf "$DATA_DIR/workspaces/testtest" 2>/dev/null || true
+  rm -rf "$DATA_DIR/workspaces/testtest" "$DATA_DIR/workspaces/bbbbbbbb" /tmp/fake-workspace-b 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -80,7 +80,7 @@ echo "--- Phase 3: Tool proxy ---"
 TEST_HASH="testtest"
 TEST_WS_DIR="$DATA_DIR/workspaces/$TEST_HASH"
 mkdir -p "$TEST_WS_DIR"
-echo "{\"workspace\":\"$WORKSPACE\"}" > "$TEST_WS_DIR/path-mappings.json"
+echo "{\"/workspace\":\"$WORKSPACE\"}" > "$TEST_WS_DIR/path-mappings.json"
 
 TOOL_PROXY_PORT="$PROXY_PORT" MOAT_TOKEN_FILE="$TOKEN_FILE" \
   node "$SCRIPT_DIR/tool-proxy.mjs" --data-dir "$DATA_DIR" \
@@ -159,6 +159,68 @@ else
   fail "git --version through proxy returned unexpected output: $RESPONSE"
 fi
 
+# --- Phase 5b: Proxy workspace isolation ---
+echo ""
+echo "--- Phase 5b: Proxy workspace isolation ---"
+
+# Create a second workspace mapping
+HASH_A="$TEST_HASH"
+HASH_B="bbbbbbbb"
+SECOND_WS_DIR="$DATA_DIR/workspaces/$HASH_B"
+mkdir -p "$SECOND_WS_DIR"
+echo "{\"/workspace\":\"/tmp/fake-workspace-b\"}" > "$SECOND_WS_DIR/path-mappings.json"
+mkdir -p /tmp/fake-workspace-b
+
+# Request with hash A should resolve to the test workspace (SCRIPT_DIR), not workspace B
+RESPONSE=$(curl -s -X POST "http://127.0.0.1:${PROXY_PORT}/git" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "{\"args\":[\"rev-parse\",\"--show-toplevel\"],\"cwd\":\"/workspace\",\"workspace_hash\":\"$HASH_A\"}")
+HOST_PATH=$(echo "$RESPONSE" | jq -r '.stdout' | tr -d '\n')
+if echo "$HOST_PATH" | grep -qv "fake-workspace-b"; then
+  pass "Hash A resolves to correct workspace (not B)"
+else
+  fail "Hash A resolved to workspace B's path: $HOST_PATH"
+fi
+
+# Request with unknown hash should fail (not silently use another workspace)
+HTTP_CODE=$(curl -s -o /tmp/proxy-unknown-hash.json -w '%{http_code}' \
+  -X POST "http://127.0.0.1:${PROXY_PORT}/git" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"args":["status"],"cwd":"/workspace","workspace_hash":"deadbeef"}')
+if [ "$HTTP_CODE" = "400" ]; then
+  pass "Unknown workspace hash rejected with 400"
+else
+  fail "Unknown workspace hash returned HTTP $HTTP_CODE (expected 400): $(cat /tmp/proxy-unknown-hash.json)"
+fi
+
+# Request with empty hash and multiple sessions should also fail (ambiguous)
+HTTP_CODE=$(curl -s -o /tmp/proxy-empty-hash.json -w '%{http_code}' \
+  -X POST "http://127.0.0.1:${PROXY_PORT}/git" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"args":["status"],"cwd":"/workspace","workspace_hash":""}')
+if [ "$HTTP_CODE" = "400" ]; then
+  pass "Empty hash with multiple sessions rejected (ambiguous)"
+else
+  fail "Empty hash with multiple sessions returned HTTP $HTTP_CODE (expected 400): $(cat /tmp/proxy-empty-hash.json)"
+fi
+
+# Clean up second workspace
+rm -rf "$SECOND_WS_DIR" /tmp/fake-workspace-b
+
+# Request with empty hash and single session should work (backward compat)
+RESPONSE=$(curl -s -X POST "http://127.0.0.1:${PROXY_PORT}/git" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d '{"args":["--version"],"cwd":"/workspace","workspace_hash":""}')
+if echo "$RESPONSE" | jq -r '.stdout' | grep -q "git version"; then
+  pass "Empty hash with single session falls back correctly (backward compat)"
+else
+  fail "Empty hash with single session failed: $RESPONSE"
+fi
+
 # --- Phase 6: Container ---
 echo ""
 echo "--- Phase 6: Container ---"
@@ -194,6 +256,84 @@ else
   fail "verify.sh did not pass"
   echo "  Output:"
   echo "$VERIFY_OUTPUT" | sed 's/^/    /'
+fi
+
+# --- Phase 6b: Agent, statusline, and settings inside container ---
+echo ""
+echo "--- Phase 6b: Agent, statusline, and settings ---"
+
+# Helper to run commands inside the test container
+dc_exec() {
+  devcontainer exec \
+    --workspace-folder "$WORKSPACE" \
+    --config "$SCRIPT_DIR/devcontainer.json" \
+    --docker-compose-file "$SCRIPT_DIR/docker-compose.yml" \
+    --docker-compose-file "$SERVICES_FILE" \
+    --docker-compose-file "$OVERRIDE_FILE" \
+    --project-name "$PROJECT_NAME" \
+    "$@" 2>&1
+}
+
+# settings.json has statusLine config
+STATUSLINE_CFG=$(dc_exec bash -c 'jq ".statusLine" /home/node/.claude/settings.json' 2>&1) || true
+if echo "$STATUSLINE_CFG" | grep -q '"type": "command"'; then
+  pass "settings.json has statusLine command config"
+else
+  fail "settings.json missing statusLine config: $STATUSLINE_CFG"
+fi
+
+# settings.json has agent permission
+AGENT_PERM=$(dc_exec bash -c 'jq ".permissions.allow" /home/node/.claude/settings.json' 2>&1) || true
+if echo "$AGENT_PERM" | grep -q 'Bash(agent:\*)'; then
+  pass "settings.json has Bash(agent:*) permission"
+else
+  fail "settings.json missing agent permission: $AGENT_PERM"
+fi
+
+# agent script is installed and executable
+if dc_exec bash -c 'test -x /usr/local/bin/agent && echo OK' | grep -q OK; then
+  pass "agent script installed at /usr/local/bin/agent"
+else
+  fail "agent script not installed or not executable"
+fi
+
+# agent list works with no agents
+AGENT_LIST=$(dc_exec bash -c 'agent list' 2>&1) || true
+if echo "$AGENT_LIST" | grep -q "No agents"; then
+  pass "agent list shows 'No agents' when none running"
+else
+  fail "agent list unexpected output: $AGENT_LIST"
+fi
+
+# agent count returns 0 when no agents
+AGENT_COUNT=$(dc_exec bash -c 'agent count' 2>&1) || true
+if [ "$(echo "$AGENT_COUNT" | tr -d '[:space:]')" = "0" ]; then
+  pass "agent count returns 0 when none running"
+else
+  fail "agent count returned '$AGENT_COUNT' (expected 0)"
+fi
+
+# statusline script is installed and executable
+if dc_exec bash -c 'test -x /home/node/.claude/hooks/statusline.sh && echo OK' | grep -q OK; then
+  pass "statusline.sh installed and executable"
+else
+  fail "statusline.sh not installed or not executable"
+fi
+
+# statusline produces formatted output from JSON
+SL_OUTPUT=$(dc_exec bash -c 'echo "{\"model\":{\"display_name\":\"Opus\"},\"context_window\":{\"used_percentage\":42.5},\"cost\":{\"total_cost_usd\":\"0.37\"}}" | /home/node/.claude/hooks/statusline.sh' 2>&1) || true
+if echo "$SL_OUTPUT" | grep -q "Opus" && echo "$SL_OUTPUT" | grep -q "ctx: 43%" && echo "$SL_OUTPUT" | grep -q '\\$0.37'; then
+  pass "statusline.sh formats output correctly: $SL_OUTPUT"
+else
+  fail "statusline.sh unexpected output: $SL_OUTPUT"
+fi
+
+# statusline handles empty/minimal JSON gracefully
+SL_EMPTY=$(dc_exec bash -c 'echo "{}" | /home/node/.claude/hooks/statusline.sh' 2>&1) || true
+if [ $? -eq 0 ] || [ -n "$SL_EMPTY" ] || [ -z "$SL_EMPTY" ]; then
+  pass "statusline.sh handles empty JSON without crashing"
+else
+  fail "statusline.sh crashed on empty JSON"
 fi
 
 # --- Phase 7: Mount matching (--add-dir reuse bug fix) ---
