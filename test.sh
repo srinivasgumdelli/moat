@@ -322,6 +322,280 @@ else
   pass "aws sts get-caller-identity is allowed"
 fi
 
+# --- Phase 5d: Audit logging ---
+echo ""
+echo "--- Phase 5d: Audit logging ---"
+
+# After Phase 5's proxy+tool tests, audit.jsonl should exist in $TEST_WS_DIR
+if [ -f "$TEST_WS_DIR/audit.jsonl" ]; then
+  pass "audit.jsonl exists in workspace dir"
+else
+  fail "audit.jsonl not found in $TEST_WS_DIR"
+fi
+
+# Verify at least one tool.execute event
+EXEC_COUNT=$(jq -c 'select(.type == "tool.execute")' "$TEST_WS_DIR/audit.jsonl" 2>/dev/null | wc -l | tr -d ' ')
+if [ "$EXEC_COUNT" -gt 0 ]; then
+  pass "audit.jsonl has $EXEC_COUNT tool.execute events"
+else
+  fail "audit.jsonl has no tool.execute events"
+fi
+
+# Verify tool.execute events have required fields
+FIRST_EXEC=$(jq -c 'select(.type == "tool.execute")' "$TEST_WS_DIR/audit.jsonl" 2>/dev/null | head -1)
+MISSING_FIELDS=""
+for field in ts endpoint args_summary exit_code duration_ms; do
+  if ! echo "$FIRST_EXEC" | jq -e ".$field" >/dev/null 2>&1; then
+    MISSING_FIELDS="$MISSING_FIELDS $field"
+  fi
+done
+if [ -z "$MISSING_FIELDS" ]; then
+  pass "tool.execute events have all required fields (ts, endpoint, args_summary, exit_code, duration_ms)"
+else
+  fail "tool.execute events missing fields:$MISSING_FIELDS"
+fi
+
+# Verify tool.blocked events from Phase 5c's IaC tests
+BLOCKED_COUNT=$(jq -c 'select(.type == "tool.blocked")' "$TEST_WS_DIR/audit.jsonl" 2>/dev/null | wc -l | tr -d ' ')
+if [ "$BLOCKED_COUNT" -gt 0 ]; then
+  pass "audit.jsonl has $BLOCKED_COUNT tool.blocked events from IaC tests"
+else
+  fail "audit.jsonl has no tool.blocked events (expected from Phase 5c)"
+fi
+
+# Verify tool.blocked events reference correct endpoints
+BLOCKED_TF=$(jq -c 'select(.type == "tool.blocked" and .endpoint == "terraform")' "$TEST_WS_DIR/audit.jsonl" 2>/dev/null | wc -l | tr -d ' ')
+if [ "$BLOCKED_TF" -gt 0 ]; then
+  pass "audit.jsonl has terraform blocked events"
+else
+  fail "audit.jsonl missing terraform blocked events"
+fi
+
+BLOCKED_K8S=$(jq -c 'select(.type == "tool.blocked" and .endpoint == "kubectl")' "$TEST_WS_DIR/audit.jsonl" 2>/dev/null | wc -l | tr -d ' ')
+if [ "$BLOCKED_K8S" -gt 0 ]; then
+  pass "audit.jsonl has kubectl blocked events"
+else
+  fail "audit.jsonl missing kubectl blocked events"
+fi
+
+BLOCKED_AWS=$(jq -c 'select(.type == "tool.blocked" and .endpoint == "aws")' "$TEST_WS_DIR/audit.jsonl" 2>/dev/null | wc -l | tr -d ' ')
+if [ "$BLOCKED_AWS" -gt 0 ]; then
+  pass "audit.jsonl has aws blocked events"
+else
+  fail "audit.jsonl missing aws blocked events"
+fi
+
+# Test readAuditLog filtering via node one-liner
+READ_RESULT=$(node -e "
+  import('./lib/audit.mjs').then(m => {
+    const events = m.readAuditLog('$TEST_WS_DIR', { type: 'tool' });
+    console.log(JSON.stringify({ count: events.length, types: [...new Set(events.map(e => e.type))] }));
+  });
+" 2>/dev/null)
+READ_COUNT=$(echo "$READ_RESULT" | jq -r '.count' 2>/dev/null)
+if [ -n "$READ_COUNT" ] && [ "$READ_COUNT" -gt 0 ]; then
+  pass "readAuditLog({ type: 'tool' }) returns $READ_COUNT events"
+else
+  fail "readAuditLog filtering returned unexpected result: $READ_RESULT"
+fi
+
+# Test readAuditLog --last filtering
+LAST_RESULT=$(node -e "
+  import('./lib/audit.mjs').then(m => {
+    const events = m.readAuditLog('$TEST_WS_DIR', { last: 2 });
+    console.log(events.length);
+  });
+" 2>/dev/null)
+if [ "$LAST_RESULT" = "2" ]; then
+  pass "readAuditLog({ last: 2 }) returns exactly 2 events"
+else
+  fail "readAuditLog({ last: 2 }) returned $LAST_RESULT events (expected 2)"
+fi
+
+# --- Phase 5e: Secrets scanning ---
+echo ""
+echo "--- Phase 5e: Secrets scanning ---"
+
+# Test scanForSecrets detects AWS key directly via node one-liner
+SCAN_RESULT=$(node -e "
+  import('./lib/secrets.mjs').then(m => {
+    const r = m.scanForSecrets('key AKIA1234567890123456 here');
+    console.log(JSON.stringify(r));
+  });
+" 2>/dev/null)
+if echo "$SCAN_RESULT" | jq -e '.[0].pattern' 2>/dev/null | grep -q 'aws-access-key'; then
+  pass "scanForSecrets detects AWS access key"
+else
+  fail "scanForSecrets did not detect AWS key: $SCAN_RESULT"
+fi
+
+# Test scanForSecrets returns empty for benign text
+SCAN_BENIGN=$(node -e "
+  import('./lib/secrets.mjs').then(m => {
+    const r = m.scanForSecrets('hello world this is normal text');
+    console.log(JSON.stringify(r));
+  });
+" 2>/dev/null)
+if [ "$SCAN_BENIGN" = "[]" ]; then
+  pass "scanForSecrets returns empty for benign text"
+else
+  fail "scanForSecrets returned non-empty for benign text: $SCAN_BENIGN"
+fi
+
+# Test scanForSecrets detects private key header
+SCAN_PK=$(node -e "
+  import('./lib/secrets.mjs').then(m => {
+    const r = m.scanForSecrets('-----BEGIN RSA PRIVATE KEY-----');
+    console.log(JSON.stringify(r));
+  });
+" 2>/dev/null)
+if echo "$SCAN_PK" | jq -e '.[0].pattern' 2>/dev/null | grep -q 'private-key'; then
+  pass "scanForSecrets detects private key"
+else
+  fail "scanForSecrets did not detect private key: $SCAN_PK"
+fi
+
+# Warn mode (default): send request with fake AWS key in args, expect HTTP 200 (not blocked)
+SECRETS_RESPONSE=$(curl -s \
+  -X POST "http://127.0.0.1:${PROXY_PORT}/git" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "{\"args\":[\"log\",\"--oneline\",\"-1\",\"AKIA1234567890123456\"],\"cwd\":\"/workspace\",\"workspace_hash\":\"$TEST_HASH\"}")
+if echo "$SECRETS_RESPONSE" | jq -e '.blocked' 2>/dev/null | grep -q 'true'; then
+  fail "Secrets warn mode blocked the request (should only warn)"
+else
+  pass "Secrets warn mode allows request with fake AWS key (HTTP 200)"
+fi
+
+# Check proxy stderr log for [secrets-scan] warning
+if grep -q '\[secrets-scan\]' /tmp/moat-test-proxy.log 2>/dev/null; then
+  pass "Proxy logged [secrets-scan] warning for detected secret"
+else
+  fail "Proxy did not log [secrets-scan] warning"
+fi
+
+# Verify secrets.detected event in audit.jsonl
+SECRETS_AUDIT=$(jq -c 'select(.type == "secrets.detected")' "$TEST_WS_DIR/audit.jsonl" 2>/dev/null | wc -l | tr -d ' ')
+if [ "$SECRETS_AUDIT" -gt 0 ]; then
+  pass "audit.jsonl has secrets.detected event(s)"
+else
+  fail "audit.jsonl missing secrets.detected events"
+fi
+
+# Block mode: restart proxy with MOAT_SECRETS_BLOCK=1
+kill "$PROXY_PID" 2>/dev/null || true
+sleep 1
+
+MOAT_SECRETS_BLOCK=1 TOOL_PROXY_PORT="$PROXY_PORT" MOAT_TOKEN_FILE="$TOKEN_FILE" \
+  node "$SCRIPT_DIR/tool-proxy.mjs" --data-dir "$DATA_DIR" \
+  </dev/null >>/tmp/moat-test-proxy.log 2>&1 &
+PROXY_PID=$!
+sleep 1
+
+BLOCK_RESPONSE=$(curl -s \
+  -X POST "http://127.0.0.1:${PROXY_PORT}/git" \
+  -H "Authorization: Bearer ${TOKEN}" \
+  -H "Content-Type: application/json" \
+  -d "{\"args\":[\"log\",\"--oneline\",\"-1\",\"AKIA1234567890123456\"],\"cwd\":\"/workspace\",\"workspace_hash\":\"$TEST_HASH\"}")
+if echo "$BLOCK_RESPONSE" | jq -e '.blocked' 2>/dev/null | grep -q 'true'; then
+  pass "Secrets block mode blocks request with AWS key"
+else
+  fail "Secrets block mode did not block request: $BLOCK_RESPONSE"
+fi
+
+# Restart proxy in normal mode (warn) for remaining tests
+kill "$PROXY_PID" 2>/dev/null || true
+sleep 1
+
+TOOL_PROXY_PORT="$PROXY_PORT" MOAT_TOKEN_FILE="$TOKEN_FILE" \
+  node "$SCRIPT_DIR/tool-proxy.mjs" --data-dir "$DATA_DIR" \
+  </dev/null >>/tmp/moat-test-proxy.log 2>&1 &
+PROXY_PID=$!
+sleep 1
+
+if curl -sf "http://127.0.0.1:${PROXY_PORT}/health" >/dev/null; then
+  pass "Proxy restarted in warn mode after block mode test"
+else
+  fail "Proxy failed to restart after block mode test"
+fi
+
+# --- Phase 5f: Multi-runtime resolution ---
+echo ""
+echo "--- Phase 5f: Multi-runtime resolution ---"
+
+# Test resolveRuntimeName: CLI flag takes priority
+RT_CLI=$(node -e "
+  import('./lib/runtimes/index.mjs').then(m => console.log(m.resolveRuntimeName('codex', '/tmp')));
+" 2>/dev/null)
+if [ "$RT_CLI" = "codex" ]; then
+  pass "resolveRuntimeName: CLI flag takes priority (codex)"
+else
+  fail "resolveRuntimeName CLI flag returned '$RT_CLI' (expected 'codex')"
+fi
+
+# Test default fallback
+RT_DEFAULT=$(node -e "
+  import('./lib/runtimes/index.mjs').then(m => console.log(m.resolveRuntimeName(null, '/tmp')));
+" 2>/dev/null)
+if [ "$RT_DEFAULT" = "claude" ]; then
+  pass "resolveRuntimeName: default fallback returns 'claude'"
+else
+  fail "resolveRuntimeName default returned '$RT_DEFAULT' (expected 'claude')"
+fi
+
+# Test .moat.yml detection
+TEMP_RT_DIR=$(mktemp -d)
+echo "runtime: amp" > "$TEMP_RT_DIR/.moat.yml"
+RT_YML=$(node -e "
+  import('./lib/runtimes/index.mjs').then(m => console.log(m.resolveRuntimeName(null, '$TEMP_RT_DIR')));
+" 2>/dev/null)
+rm -rf "$TEMP_RT_DIR"
+if [ "$RT_YML" = "amp" ]; then
+  pass "resolveRuntimeName: reads runtime from .moat.yml (amp)"
+else
+  fail "resolveRuntimeName .moat.yml returned '$RT_YML' (expected 'amp')"
+fi
+
+# Test getRuntime returns object with expected fields
+RT_FIELDS=$(node -e "
+  import('./lib/runtimes/index.mjs').then(m => {
+    const r = m.getRuntime('claude');
+    const fields = ['binary', 'displayName', 'defaultVersion'].filter(f => r[f]);
+    console.log(fields.length);
+  });
+" 2>/dev/null)
+if [ "$RT_FIELDS" = "3" ]; then
+  pass "getRuntime('claude') has expected fields (binary, displayName, defaultVersion)"
+else
+  fail "getRuntime('claude') missing fields (found $RT_FIELDS of 3)"
+fi
+
+# Test getRuntime('unknown') throws
+RT_UNKNOWN=$(node -e "
+  import('./lib/runtimes/index.mjs').then(m => {
+    try { m.getRuntime('unknown'); console.log('no-throw'); }
+    catch { console.log('threw'); }
+  });
+" 2>/dev/null)
+if [ "$RT_UNKNOWN" = "threw" ]; then
+  pass "getRuntime('unknown') throws as expected"
+else
+  fail "getRuntime('unknown') did not throw: $RT_UNKNOWN"
+fi
+
+# Test listRuntimes() returns all 4 runtimes
+RT_LIST=$(node -e "
+  import('./lib/runtimes/index.mjs').then(m => {
+    const names = m.listRuntimes();
+    console.log(names.sort().join(','));
+  });
+" 2>/dev/null)
+if [ "$RT_LIST" = "amp,claude,codex,opencode" ]; then
+  pass "listRuntimes() returns all 4 runtimes: $RT_LIST"
+else
+  fail "listRuntimes() returned '$RT_LIST' (expected 'amp,claude,codex,opencode')"
+fi
+
 # --- Phase 6: Container ---
 echo ""
 echo "--- Phase 6: Container ---"
