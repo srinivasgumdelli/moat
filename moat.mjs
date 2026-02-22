@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Moat — sandboxed Claude Code launcher
 // Usage: moat [workspace_path] [--add-dir <path>...] [claude args...]
-// Subcommands: doctor | update [--version X.Y.Z] | down [--all] | stop | attach <dir> | detach <dir|--all> | plan | init | uninstall | allow-domain <domain...>
+// Subcommands: doctor | update [--version X.Y.Z] | down [--all] | stop | attach <dir> | detach <dir|--all> | init | uninstall | allow-domain <domain...>
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, lstatSync, unlinkSync } from 'node:fs';
 import { dirname, join, basename } from 'node:path';
@@ -117,11 +117,6 @@ if (subcommand === 'init') {
   const { initConfig } = await import('./lib/init-config.mjs');
   await initConfig(workspace);
   process.exit(0);
-}
-
-// --- plan subcommand: inject read-only tool restriction ---
-if (subcommand === 'plan') {
-  claudeArgs.push('--allowedTools', 'Read,Grep,Glob,Task,WebFetch,WebSearch');
 }
 
 // --- Main flow ---
@@ -269,7 +264,7 @@ if (!containerName) {
 }
 
 // Copy global CLAUDE.md into container
-await copyClaudeMd(containerName);
+await copyClaudeMd(containerName, REPO_DIR);
 
 // Forward host MCP server configs into container
 // External HTTP servers get proxied through tool-proxy (auth stays on host)

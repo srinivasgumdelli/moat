@@ -58,20 +58,30 @@ function getMappingsForHash(workspaceHash) {
     return workspaceMappings[workspaceHash];
   }
 
-  // Fallback: if no hash provided (backward compat), use the first available mapping
-  const hashes = Object.keys(workspaceMappings);
-  if (hashes.length > 0) {
-    return workspaceMappings[hashes[0]];
+  // Only fall back to single-session lookup when no hash was provided at all
+  // (backward compat with old containers that predate workspace_hash).
+  // Never fall back when a hash IS provided but not found — that means the
+  // session's path-mappings.json was cleaned up and returning a different
+  // session's mapping would route commands to the wrong repository.
+  if (!workspaceHash) {
+    const hashes = Object.keys(workspaceMappings);
+    if (hashes.length === 1) {
+      return workspaceMappings[hashes[0]];
+    }
   }
 
   return {};
 }
 
-// Translate container path to host path
+// Translate container path to host path.
+// Returns null when no mapping is found (stale session or missing hash).
 function toHostPath(containerPath, workspaceHash) {
   if (!containerPath) return null;
 
   const mappings = getMappingsForHash(workspaceHash);
+
+  // No mappings found — session may have been cleaned up
+  if (Object.keys(mappings).length === 0) return null;
 
   // Check exact matches first
   if (mappings[containerPath]) return mappings[containerPath];
@@ -285,7 +295,14 @@ const server = http.createServer(async (req, res) => {
     if (ghToken) { env.GITHUB_TOKEN = ghToken; env.GH_TOKEN = ghToken; }
     const options = { env };
     const hostCwd = toHostPath(body.cwd, wsHash);
-    if (hostCwd && existsSync(hostCwd)) options.cwd = hostCwd;
+    if (hostCwd && existsSync(hostCwd)) {
+      options.cwd = hostCwd;
+    } else if (body.cwd && !hostCwd) {
+      const msg = `No path mapping for workspace hash '${wsHash}' — session may have ended. Restart moat to fix.`;
+      process.stderr.write(`[tool-proxy] gh REJECTED: ${msg}\n`);
+      sendJson(res, 400, { success: false, error: msg });
+      return;
+    }
     const result = await executeCommand('gh', body.args, options);
     process.stderr.write(`[tool-proxy] gh ${body.args.join(' ')} -> exit ${result.exitCode}\n`);
     sendJson(res, 200, result);
@@ -305,6 +322,12 @@ const server = http.createServer(async (req, res) => {
     }
     const wsHash = body.workspace_hash || '';
     const hostCwd = toHostPath(body.cwd, wsHash);
+    if (!hostCwd) {
+      const msg = `No path mapping for workspace hash '${wsHash}' — session may have ended. Restart moat to fix.`;
+      process.stderr.write(`[tool-proxy] git REJECTED: ${msg}\n`);
+      sendJson(res, 400, { success: false, error: msg });
+      return;
+    }
     if (!existsSync(hostCwd)) {
       sendJson(res, 400, { success: false, error: `Directory not found: ${hostCwd}` });
       return;
@@ -360,7 +383,14 @@ const server = http.createServer(async (req, res) => {
     const wsHash = body.workspace_hash || '';
     const options = {};
     const hostCwd = toHostPath(body.cwd, wsHash);
-    if (hostCwd && existsSync(hostCwd)) options.cwd = hostCwd;
+    if (hostCwd && existsSync(hostCwd)) {
+      options.cwd = hostCwd;
+    } else if (body.cwd && !hostCwd) {
+      const msg = `No path mapping for workspace hash '${wsHash}' — session may have ended. Restart moat to fix.`;
+      process.stderr.write(`[tool-proxy] kubectl REJECTED: ${msg}\n`);
+      sendJson(res, 400, { success: false, error: msg });
+      return;
+    }
     const result = await executeCommand('kubectl', body.args, options);
     process.stderr.write(`[tool-proxy] kubectl ${body.args.join(' ')} -> exit ${result.exitCode}\n`);
     sendJson(res, 200, result);
@@ -383,7 +413,14 @@ const server = http.createServer(async (req, res) => {
     const wsHash = body.workspace_hash || '';
     const options = {};
     const hostCwd = toHostPath(body.cwd, wsHash);
-    if (hostCwd && existsSync(hostCwd)) options.cwd = hostCwd;
+    if (hostCwd && existsSync(hostCwd)) {
+      options.cwd = hostCwd;
+    } else if (body.cwd && !hostCwd) {
+      const msg = `No path mapping for workspace hash '${wsHash}' — session may have ended. Restart moat to fix.`;
+      process.stderr.write(`[tool-proxy] aws REJECTED: ${msg}\n`);
+      sendJson(res, 400, { success: false, error: msg });
+      return;
+    }
     const result = await executeCommand('aws', body.args, options);
     process.stderr.write(`[tool-proxy] aws ${body.args.join(' ')} -> exit ${result.exitCode}\n`);
     sendJson(res, 200, result);

@@ -59,7 +59,6 @@ moat                                        # full access (workspace = cwd)
 moat ~/Projects/myapp                       # target a specific directory
 moat --add-dir ~/Projects/shared-lib        # mount extra directories
 moat ~/Projects/myapp --add-dir ~/lib-a --add-dir ~/lib-b
-moat plan                                   # read-only tools only (no Write, Edit, Bash)
 moat init                                   # scan deps, create .moat.yml interactively
 moat attach ~/Projects/shared-lib           # live-sync a dir into a running session
 moat detach shared-lib                      # stop syncing
@@ -138,9 +137,22 @@ Moat is designed to be **fail-closed** — if a process ignores proxy settings o
 
 **Recommendations:**
 - Review `.moat.yml` domains — only whitelist what your project needs
-- Use `moat plan` for research/analysis phases where no writes are needed
 - Run `moat doctor` to verify your setup is correctly configured
 - Keep Docker Desktop and your host kernel updated (relevant when `docker: true`)
+
+## Background agents
+
+Spawn read-only Claude Code agents that run in the background — research code, run tests, analyze patterns — without blocking your main session:
+
+```bash
+agent run "run all tests and summarize failures"
+agent run --name research "explain the auth flow"
+agent list                    # see all agents
+agent log <id>                # view output
+agent kill <id>               # terminate
+```
+
+Agents are read-only by default (no file writes), so they can't conflict with your main session. The status line shows running agent count alongside model, task, context usage, and cost.
 
 ## IDE features
 

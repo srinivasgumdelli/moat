@@ -141,7 +141,7 @@ RUN bd setup claude && \
     mkdir -p /home/node/.claude/commands /home/node/.claude/hooks /home/node/.claude/mcp && \
     curl -sL "https://raw.githubusercontent.com/steveyegge/beads/main/integrations/claude-code/commands/plan-to-beads.md" \
       -o /home/node/.claude/commands/plan-to-beads.md && \
-    jq '. + {"permissions": {"allow": ((.permissions.allow // []) + ["Bash(bd:*)"])}, "hooks": {"PostToolUse": [{"matcher": "Edit|Write", "hooks": [{"type": "command", "command": "/home/node/.claude/hooks/auto-diagnostics.sh", "timeout": 30}]}]}, "mcpServers": {"ide-tools": {"command": "node", "args": ["/home/node/.claude/mcp/ide-tools.mjs"]}, "ide-lsp": {"command": "node", "args": ["/home/node/.claude/mcp/ide-lsp.mjs"]}}}' /home/node/.claude/settings.json > /tmp/settings.json && \
+    jq '. + {"permissions": {"allow": ((.permissions.allow // []) + ["Bash(bd:*)", "Bash(agent:*)"])}, "hooks": {"PostToolUse": [{"matcher": "Edit|Write", "hooks": [{"type": "command", "command": "/home/node/.claude/hooks/auto-diagnostics.sh", "timeout": 30}]}]}, "mcpServers": {"ide-tools": {"command": "node", "args": ["/home/node/.claude/mcp/ide-tools.mjs"]}, "ide-lsp": {"command": "node", "args": ["/home/node/.claude/mcp/ide-lsp.mjs"]}}, "statusLine": {"type": "command", "command": "/home/node/.claude/hooks/statusline.sh", "padding": 2}}' /home/node/.claude/settings.json > /tmp/settings.json && \
     mv /tmp/settings.json /home/node/.claude/settings.json
 
 # Install tool proxy wrapper scripts and static token
@@ -165,10 +165,20 @@ RUN chmod 644 /etc/tool-proxy-token && \
 COPY verify.sh /usr/local/bin/
 RUN chmod +x /usr/local/bin/verify.sh
 
+# Copy agent manager script
+COPY agent.sh /usr/local/bin/agent
+RUN chmod +x /usr/local/bin/agent
+
 # Copy IDE hook and MCP server files
 COPY --chown=node:node auto-diagnostics.sh /home/node/.claude/hooks/
 COPY --chown=node:node ide-tools.mjs /home/node/.claude/mcp/
 COPY --chown=node:node ide-lsp.mjs /home/node/.claude/mcp/
+COPY --chown=node:node moat-claude.md /home/node/.claude/CLAUDE.md
+COPY --chown=node:node moat-claude.md /home/node/.claude/CLAUDE.md.base
 RUN chmod +x /home/node/.claude/hooks/auto-diagnostics.sh
+
+# Copy status line hook
+COPY --chown=node:node statusline.sh /home/node/.claude/hooks/
+RUN chmod +x /home/node/.claude/hooks/statusline.sh
 
 USER node
