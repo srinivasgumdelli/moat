@@ -29,8 +29,8 @@ if [ -n "$task_title" ]; then
   parts+=("$task_title")
 fi
 
-# Running agent count (via tool-proxy)
-agent_count=$(agent count 2>/dev/null || echo "0")
+# Running agent count (via tool-proxy, 2s timeout to avoid blocking statusline)
+agent_count=$(timeout 2 agent count 2>/dev/null || echo "0")
 if [ "$agent_count" -gt 0 ]; then
   parts+=("${agent_count} agents")
 fi
