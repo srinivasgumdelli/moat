@@ -287,16 +287,20 @@ process.on('exit', () => {
 });
 process.on('SIGTERM', () => process.exit(0));
 
-// Build agent image if missing
+// Build agent image if missing (cache by runtime+version to avoid redundant builds)
 ensureTokenInRepo();
-const agentImageName = `moat-agent-${runtimeName}`;
+const runtimeVersion = process.env[runtime.versionEnvVar] || runtime.defaultVersion;
+const agentImageTag = `moat-agent-${runtimeName}:${runtimeVersion}`;
+const agentImageLatest = `moat-agent-${runtimeName}:latest`;
 try {
-  execSync(`docker image inspect ${agentImageName}`, { stdio: 'pipe' });
+  execSync(`docker image inspect ${agentImageTag}`, { stdio: 'pipe' });
+  log(`Agent image cached (${agentImageTag})`);
 } catch {
-  log(`Building agent image (${runtime.displayName})...`);
-  const runtimeVersion = process.env[runtime.versionEnvVar] || runtime.defaultVersion;
+  log(`Building agent image (${runtime.displayName} ${runtimeVersion})...`);
   const buildResult = spawnSync('docker', [
-    'build', '-t', agentImageName,
+    'build',
+    '-t', agentImageTag,
+    '-t', agentImageLatest,
     '--build-arg', `RUNTIME=${runtimeName}`,
     '--build-arg', `RUNTIME_VERSION=${runtimeVersion}`,
     // Keep backward compat with existing Dockerfile.agent
@@ -310,8 +314,11 @@ try {
   }
 }
 
+// Store agent image tag in wsDir for tool-proxy to use
+writeFileSync(join(wsDir, 'agent-image-tag.txt'), agentImageTag + '\n');
+
 // Start or reuse tool proxy
-const proxyOk = await startProxy(REPO_DIR, DATA_DIR);
+const proxyOk = await startProxy(REPO_DIR, DATA_DIR, { workspace });
 if (!proxyOk) {
   process.exit(1);
 }

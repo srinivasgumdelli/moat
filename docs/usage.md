@@ -219,6 +219,76 @@ For example, `aws ec2 describe-instances` is allowed but `aws ec2 terminate-inst
 
 All IaC restrictions are enforced server-side on the host tool proxy — the container cannot bypass them.
 
+### Secrets scanning
+
+The tool proxy scans all proxied commands (git, gh, terraform, kubectl, aws) for leaked credentials — both in command arguments (pre-scan) and command output (post-scan).
+
+**Built-in patterns** (11 total):
+
+| Pattern | Detects |
+|---------|---------|
+| `aws-access-key` | `AKIA...` access key IDs |
+| `api-key-assignment` | `api_key = "..."` style assignments |
+| `private-key` | `-----BEGIN ... PRIVATE KEY-----` |
+| `github-token` | `ghp_`, `gho_`, etc. |
+| `anthropic-key` | `sk-ant-...` |
+| `slack-token` | `xoxb-`, `xoxp-`, etc. |
+| `password-assignment` | `password = "..."` |
+| `openai-key` | `sk-...T3BlbkFJ...` (legacy format) |
+| `gcp-service-key` | `"type": "service_account"` |
+| `jwt-token` | `eyJ...` JWT tokens |
+| `generic-secret-env` | `MY_SECRET = "..."`, `TOKEN = "..."` |
+
+**Modes:**
+
+- **Warn** (default): Logs a `[secrets-scan]` warning to the proxy log and records a `secrets.detected` audit event. The command still runs.
+- **Block** (`MOAT_SECRETS_BLOCK=1`): Returns an error response instead of executing the command. Use this for stricter enforcement.
+
+**Custom patterns** via `.moat.yml`:
+
+```yaml
+secrets:
+  patterns:
+    - name: my-internal-token
+      regex: "MYCO_[A-Za-z0-9]{32}"
+```
+
+Custom patterns are merged with built-in patterns. Invalid regexes are skipped with a warning.
+
+### Audit logging
+
+Every tool-proxy interaction is logged to `audit.jsonl` in the per-workspace data directory (`~/.moat/data/workspaces/<hash>/audit.jsonl`).
+
+**Event types:**
+
+| Type | When |
+|------|------|
+| `session.start` | Moat session begins |
+| `session.end` | Moat session ends |
+| `tool.execute` | A proxied command runs (with args, exit code, duration) |
+| `tool.blocked` | An IaC command is blocked by allowlist |
+| `secrets.detected` | A secret pattern is found in args or output |
+| `agent.spawn` | A background agent is started |
+| `agent.done` | A background agent finishes |
+
+**Viewing audit logs:**
+
+```bash
+moat audit                           # list workspaces with audit logs
+moat audit <hash>                    # show events for a workspace
+moat audit <hash> --type tool        # filter by event type prefix
+moat audit <hash> --last 20          # show last 20 events
+moat audit <hash> --json             # JSON output
+moat audit <hash> --tail             # live-follow mode (like tail -f)
+moat audit <hash> --tail --type tool # follow only tool events
+```
+
+The `--tail` / `-f` flag watches the audit log in real-time, printing new events as they're appended. Useful for debugging tool-proxy interactions during an active session. Press Ctrl+C to stop.
+
+**Log rotation:**
+
+Audit logs rotate automatically when they exceed 5 MB (configurable via `MOAT_AUDIT_MAX_SIZE`). Up to 3 rotated files are kept (`MOAT_AUDIT_MAX_FILES`). Rotation happens at the start of each session. The `moat audit` command reads all rotated files transparently.
+
 ### Docker access
 
 When `docker: true` is set in `.moat.yml`, Docker commands are available inside the sandbox via rootless [Podman](https://podman.io/). The `docker` command is aliased to `podman`, so existing workflows and Dockerfiles work without changes.
@@ -426,7 +496,7 @@ Agent containers are cleaned up automatically when the devcontainer is torn down
 
 | Property | Value |
 |----------|-------|
-| Image | `moat-agent` (built on first `moat` launch) |
+| Image | `moat-agent-<runtime>:<version>` (cached by runtime+version, rebuilt only on version change) |
 | Network | Same sandbox network as devcontainer |
 | Workspace | Mounted read-only |
 | Resources | 4GB memory, 2 CPUs |
