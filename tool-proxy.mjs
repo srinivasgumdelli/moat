@@ -782,7 +782,16 @@ const server = http.createServer(async (req, res) => {
 
       const runtimeName = body.runtime || 'claude';
       const runtimeBinary = body.runtime_binary || 'claude';
-      const agentImageName = `moat-agent-${runtimeName}`;
+      // Use versioned agent image tag if stored by moat.mjs, else fall back to latest
+      let agentImageName = `moat-agent-${runtimeName}`;
+      try {
+        const tagFile = join(WORKSPACES_DIR, wsHash, 'agent-image-tag.txt');
+        if (existsSync(tagFile)) {
+          const tag = readFileSync(tagFile, 'utf-8').trim();
+          if (tag) agentImageName = tag;
+        }
+      } catch {}
+
 
       // Write API key to a temp env file (avoids exposing it in docker inspect / /proc)
       const envFile = join(tmpdir(), `moat-agent-${id}.env`);
