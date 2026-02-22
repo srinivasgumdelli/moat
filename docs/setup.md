@@ -264,9 +264,6 @@ The sandbox is launched via `moat` (a symlink at `~/.local/bin/moat` → `<repo>
 # Full sandbox with all tools
 moat
 
-# Plan mode — read-only tools only (no Write, Edit, Bash)
-moat plan
-
 # Initialize .moat.yml from detected dependencies
 moat init
 
@@ -381,10 +378,6 @@ Then restart the squid container (or just re-run `moat` — it rebuilds automati
 
 Note: Use a leading dot (`.example.com`) to match the domain and all subdomains. Squid 6 does not allow both `example.com` and `.example.com` in the same ACL — the dot form covers both.
 
-## Plan Mode
-
-`moat plan` launches Claude with `--allowedTools "Read,Grep,Glob,Task,WebFetch,WebSearch"` — only read-only tools. This prevents Claude from writing files, running commands, or making edits during planning/research phases.
-
 ## Container Reuse
 
 Containers persist across sessions for fast re-launch:
@@ -418,7 +411,6 @@ Set in `docker-compose.yml` via `deploy.resources.limits`:
 | No NET_ADMIN/NET_RAW | Capabilities not granted | Kernel-level network manipulation |
 | Resource limits | CPU/memory caps via docker-compose | Resource exhaustion on host |
 | Container reuse with rebuild | Recreated when workspace/mounts change | Stale state from previous workspace |
-| Plan mode | Read-only tool restrictions | Unintended writes during research/planning |
 | Agent container isolation | Agents run in separate containers with workspace mounted read-only, 4GB/2CPU limits | Agents modifying workspace, resource exhaustion |
 | Podman (rootless, daemonless) | No host socket, containers inherit squid, no host filesystem access | Docker escape, network bypass |
 
