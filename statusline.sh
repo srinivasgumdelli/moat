@@ -2,15 +2,15 @@
 # Claude Code status line hook for Moat
 # Reads JSON from stdin, enriches with beads task + agent count, outputs formatted line.
 
-set -euo pipefail
+# No set -euo pipefail — status line must be resilient; partial output beats no output.
 
 # Read JSON from stdin
-input=$(cat)
+input=$(cat 2>/dev/null || true)
 
-# Extract fields from Claude Code's JSON
-model=$(echo "$input" | jq -r '.model.display_name // empty' 2>/dev/null)
-ctx_pct=$(echo "$input" | jq -r '.context_window.used_percentage // empty' 2>/dev/null)
-cost=$(echo "$input" | jq -r '.cost.total_cost_usd // empty' 2>/dev/null)
+# Extract fields from Claude Code's JSON (all optional — fail gracefully)
+model=$(echo "$input" | jq -r '.model.display_name // empty' 2>/dev/null || true)
+ctx_pct=$(echo "$input" | jq -r '.context_window.used_percentage // empty' 2>/dev/null || true)
+cost=$(echo "$input" | jq -r '.cost.total_cost_usd // empty' 2>/dev/null || true)
 
 parts=()
 
@@ -23,9 +23,9 @@ fi
 task_title=""
 if [ -f /workspace/.beads/issues.jsonl ]; then
   # Try in_progress first, then fall back to most recent open
-  task_title=$(jq -r 'select(.status == "in_progress") | .title' /workspace/.beads/issues.jsonl 2>/dev/null | tail -1)
+  task_title=$(jq -r 'select(.status == "in_progress") | .title' /workspace/.beads/issues.jsonl 2>/dev/null | tail -1 || true)
   if [ -z "$task_title" ]; then
-    task_title=$(jq -r 'select(.status == "open") | .title' /workspace/.beads/issues.jsonl 2>/dev/null | tail -1)
+    task_title=$(jq -r 'select(.status == "open") | .title' /workspace/.beads/issues.jsonl 2>/dev/null | tail -1 || true)
   fi
 fi
 if [ -n "$task_title" ]; then
@@ -56,7 +56,6 @@ fi
 
 # Context usage
 if [ -n "$ctx_pct" ]; then
-  # Round to integer
   ctx_int=$(printf '%.0f' "$ctx_pct" 2>/dev/null || echo "$ctx_pct")
   parts+=("ctx: ${ctx_int}%")
 fi

@@ -239,6 +239,12 @@ if (!proxyOk) {
   process.exit(1);
 }
 
+// Pre-create shared volumes (external: true requires they exist before compose up)
+for (const vol of ['moat-bashhistory', 'moat-config']) {
+  try { execSync(`docker volume inspect ${vol}`, { stdio: 'pipe' }); }
+  catch { execSync(`docker volume create ${vol}`, { stdio: 'pipe' }); }
+}
+
 // Per-workspace compose project name — isolates concurrent sessions
 const projectName = `moat-${hash}`;
 

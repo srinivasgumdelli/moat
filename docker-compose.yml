@@ -65,5 +65,7 @@ networks:
 volumes:
   moat-bashhistory:
     name: moat-bashhistory
+    external: true
   moat-config:
     name: moat-config
+    external: true
