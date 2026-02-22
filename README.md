@@ -21,11 +21,14 @@ A [moat](https://en.wikipedia.org/wiki/Moat) is a defensive ditch surrounding a 
                  +-----------+
                        |
           Internal Network (sandbox)
-                       |
-              +---------------+           +-----------+
-              |  devcontainer |  -------> | tool proxy |  (host)
-              |  Claude Code  |  :9876    | credentials|
-              +---------------+           +-----------+
+              |                  |
+    +---------------+   +-----------------+         +-----------+
+    |  devcontainer |   | moat-agent-<id> | (0..N)  | tool proxy|  (host)
+    |  Claude Code  |   | claude -p "..." |         | cred iso  |
+    |               |   | workspace :ro   |         | agent mgmt|
+    +---------------+   +-----------------+         +-----------+
+              |                  |                         |
+              +------ HTTP :9876 -------------------------+
 ```
 
 **Network isolation**: The container sits on an `internal: true` Docker network with zero direct egress. All traffic goes through a squid forward proxy that whitelists specific domains.
@@ -111,6 +114,7 @@ See [docs/usage.md](docs/usage.md) for the full usage guide.
 | Non-root user | Privilege escalation |
 | Resource limits | CPU/memory exhaustion |
 | Container rebuild on change | Stale state from previous workspace |
+| Agent container isolation | Background agents run in separate containers with workspace mounted read-only |
 | Podman (rootless, daemonless) | No host socket, containers inherit squid, no host filesystem access |
 
 ### Security considerations
@@ -330,6 +334,8 @@ moat/
 ├── moat.example.yml              # Example .moat.yml config
 ├── test.sh                       # End-to-end test suite
 ├── verify.sh                     # Post-start verification
+├── agent.sh                      # In-container CLI for spawning/managing background agents
+├── statusline.sh                 # Claude Code status line hook (task, agents, ctx, cost)
 ├── *-proxy-wrapper.sh            # Container-side tool wrappers (git, gh, terraform, etc.)
 ├── auto-diagnostics.sh           # PostToolUse hook for linting after edits
 ├── ide-tools.mjs                 # MCP server: diagnostics, tests, project info

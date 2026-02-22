@@ -86,6 +86,8 @@ Key properties:
 ├── agent-entrypoint.sh    # Agent container entrypoint (reads MOAT_AGENT_PROMPT)
 ├── squid.conf             # Squid proxy domain whitelist
 ├── tool-proxy.mjs         # Host-side Node.js server for gh/git credential isolation + agent management
+├── agent.sh               # In-container CLI for spawning/managing background agents
+├── statusline.sh          # Claude Code status line hook (task, agents, ctx, cost)
 ├── *-proxy-wrapper.sh     # Container-side tool wrappers (git, gh, terraform, etc.)
 ├── install.sh             # Unified installer (curl-pipeable, auto-detects context)
 ├── .proxy-token           # Copied from DATA_DIR before builds (in .gitignore)
@@ -417,6 +419,7 @@ Set in `docker-compose.yml` via `deploy.resources.limits`:
 | Resource limits | CPU/memory caps via docker-compose | Resource exhaustion on host |
 | Container reuse with rebuild | Recreated when workspace/mounts change | Stale state from previous workspace |
 | Plan mode | Read-only tool restrictions | Unintended writes during research/planning |
+| Agent container isolation | Agents run in separate containers with workspace mounted read-only, 4GB/2CPU limits | Agents modifying workspace, resource exhaustion |
 | Podman (rootless, daemonless) | No host socket, containers inherit squid, no host filesystem access | Docker escape, network bypass |
 
 ## Docker Access (Podman)
