@@ -324,13 +324,35 @@ function resolveAgentId(wsHash, partial) {
     return { error: 'No agents found.' };
   }
 
-  const matches = entries
+  // Match by ID prefix first (Docker-style)
+  const idMatches = entries
     .filter(e => e.isDirectory() && e.name.startsWith(partial))
     .map(e => e.name);
 
-  if (matches.length === 0) return { error: `No agent matching '${partial}'.` };
-  if (matches.length > 1) return { error: `Ambiguous ID '${partial}' — matches: ${matches.join(', ')}` };
-  return { id: matches[0] };
+  if (idMatches.length === 1) return { id: idMatches[0] };
+  if (idMatches.length > 1) return { error: `Ambiguous ID '${partial}' — matches: ${idMatches.join(', ')}` };
+
+  // Fall back to name matching (exact or prefix)
+  const nameMatches = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory()) continue;
+    const meta = getAgentMeta(wsHash, entry.name);
+    if (!meta) continue;
+    if (meta.name === partial || meta.name.startsWith(partial)) {
+      nameMatches.push(entry.name);
+    }
+  }
+
+  if (nameMatches.length === 1) return { id: nameMatches[0] };
+  if (nameMatches.length > 1) {
+    const names = nameMatches.map(id => {
+      const m = getAgentMeta(wsHash, id);
+      return `${m?.name || id} (${id})`;
+    });
+    return { error: `Ambiguous name '${partial}' — matches: ${names.join(', ')}` };
+  }
+
+  return { error: `No agent matching '${partial}'.` };
 }
 
 function getAgentMeta(wsHash, agentId) {

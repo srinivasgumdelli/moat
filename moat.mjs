@@ -104,7 +104,9 @@ if (subcommand === 'log') {
 
 if (subcommand === 'down') {
   const allFlag = subcommandArgs.includes('--all');
-  await down(REPO_DIR, { all: allFlag, workspace });
+  // First non-flag arg is a pattern (e.g. moat down myapp, moat down moat-abc*)
+  const pattern = subcommandArgs.find(a => a !== '--all' && !a.startsWith('-'));
+  await down(REPO_DIR, { all: allFlag, workspace, pattern });
   process.exit(0);
 }
 
