@@ -144,6 +144,14 @@ if (subcommand === 'init') {
 
 // --- Main flow ---
 
+// Compute moat version from git (short SHA + dirty flag)
+let moatVersion = 'unknown';
+try {
+  const sha = execSync('git -C ' + JSON.stringify(REPO_DIR) + ' rev-parse --short HEAD', { encoding: 'utf-8' }).trim();
+  const dirty = execSync('git -C ' + JSON.stringify(REPO_DIR) + ' status --porcelain', { encoding: 'utf-8' }).trim();
+  moatVersion = sha + (dirty ? '-dirty' : '');
+} catch {}
+
 process.env.MOAT_WORKSPACE = workspace;
 
 // Compute per-workspace data directory
@@ -233,6 +241,7 @@ const devcontainerConfig = {
   },
   containerEnv: {
     MOAT_WORKSPACE_HASH: hash,
+    MOAT_VERSION: moatVersion,
   },
   remoteUser: 'node',
   remoteEnv: {

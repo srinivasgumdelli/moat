@@ -13,6 +13,12 @@ cost=$(echo "$input" | jq -r '.cost.total_cost_usd // empty' 2>/dev/null || true
 
 parts=()
 
+# Moat version (set by moat.mjs via containerEnv)
+moat_ver="${MOAT_VERSION:-}"
+if [ -n "$moat_ver" ]; then
+  parts+=("moat:${moat_ver}")
+fi
+
 # Current beads task — parse issues.jsonl directly
 task_title=""
 if [ -f /workspace/.beads/issues.jsonl ]; then
