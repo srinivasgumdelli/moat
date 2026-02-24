@@ -1,0 +1,6 @@
+Idea: 
+
+I'm trying to create an automated summarizer that would scan through all relevant resources online and generate a digestable report (can be as detailed or as high level as configurable).
+It should read relevant sources of online information, first summarize what those are and then do cross linking on what the different events mean - as in read between the lines, do a best effort guess (not necessarily predict)
+be able to tentatively put out potential opinions that might happen in the next few days based on the sources
+
