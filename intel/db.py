@@ -346,6 +346,30 @@ def finish_run(conn: sqlite3.Connection, run_id: int, run: PipelineRun) -> None:
 def get_recent_runs(conn: sqlite3.Connection, limit: int = 10) -> list[dict]:
     """Fetch recent pipeline runs for stats display."""
     rows = conn.execute(
-        "SELECT * FROM pipeline_runs ORDER BY started_at DESC LIMIT ?", (limit,)
+        "SELECT * FROM pipeline_runs ORDER BY started_at DESC LIMIT ?",
+        (limit,),
     ).fetchall()
     return [dict(row) for row in rows]
+
+
+def get_previous_run_id(
+    conn: sqlite3.Connection, current_run_id: int,
+) -> int | None:
+    """Get the most recent completed run before the current one."""
+    row = conn.execute(
+        """SELECT id FROM pipeline_runs
+           WHERE id < ? AND status = 'completed'
+           ORDER BY id DESC LIMIT 1""",
+        (current_run_id,),
+    ).fetchone()
+    return row["id"] if row else None
+
+
+def get_clusters_with_summaries(
+    conn: sqlite3.Connection, run_id: int,
+) -> list[tuple[Cluster, Summary | None]]:
+    """Fetch clusters with their summaries for a run."""
+    clusters = get_clusters_by_run(conn, run_id)
+    summaries = get_summaries_by_run(conn, run_id)
+    summary_map = {s.cluster_id: s for s in summaries}
+    return [(c, summary_map.get(c.id)) for c in clusters]

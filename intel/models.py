@@ -80,6 +80,17 @@ class Projection:
 
 
 @dataclass
+class Trend:
+    """A developing story detected across pipeline runs."""
+
+    topic: str
+    current_label: str
+    previous_label: str
+    trend_type: str  # escalating, continuing, de-escalating
+    description: str
+
+
+@dataclass
 class PipelineRun:
     """Record of a single pipeline execution."""
 
