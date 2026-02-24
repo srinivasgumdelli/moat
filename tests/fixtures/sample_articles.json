@@ -1,0 +1,26 @@
+[
+  {
+    "url": "https://example.com/ai-breakthrough",
+    "title": "Major AI Breakthrough in Reasoning",
+    "content": "Researchers at a leading AI lab have demonstrated a new reasoning capability that significantly outperforms previous benchmarks. The system uses a novel architecture that combines chain-of-thought with verification steps.",
+    "source_name": "Tech Review",
+    "source_type": "rss",
+    "topic": "tech"
+  },
+  {
+    "url": "https://example.com/eu-china-trade",
+    "title": "EU-China Trade Tensions Escalate",
+    "content": "The European Union has announced new tariffs on Chinese electric vehicles, escalating trade tensions. China has threatened retaliatory measures targeting European agricultural exports.",
+    "source_name": "World Affairs",
+    "source_type": "rss",
+    "topic": "geopolitics"
+  },
+  {
+    "url": "https://example.com/fed-rates",
+    "title": "Federal Reserve Holds Rates Steady",
+    "content": "The Federal Reserve kept interest rates unchanged at its latest meeting, signaling a wait-and-see approach amid mixed economic signals. Markets reacted positively to the decision.",
+    "source_name": "Market Watch",
+    "source_type": "rss",
+    "topic": "finance"
+  }
+]
