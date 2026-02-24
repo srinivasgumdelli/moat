@@ -8,6 +8,7 @@ import anthropic
 
 from intel.llm import register_provider
 from intel.llm.base import BaseLLMProvider, LLMResponse
+from intel.retry import retry_async
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +30,21 @@ class AnthropicProvider(BaseLLMProvider):
         max_tokens: int = 2000,
     ) -> LLMResponse:
         model = model or self.active_model or self.default_model
+        response = await retry_async(
+            self._do_complete, prompt, system, model,
+            temperature, max_tokens,
+        )
+        self._track_cost(response)
+        return response
+
+    async def _do_complete(
+        self,
+        prompt: str,
+        system: str,
+        model: str,
+        temperature: float,
+        max_tokens: int,
+    ) -> LLMResponse:
         client = anthropic.AsyncAnthropic(api_key=self.api_key)
 
         kwargs = {

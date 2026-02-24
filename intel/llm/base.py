@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -43,3 +46,16 @@ class BaseLLMProvider(ABC):
     def provider_name(self) -> str:
         """Human-readable provider name."""
         ...
+
+    def _track_cost(self, response: LLMResponse) -> None:
+        """Report token usage to the pipeline cost tracker."""
+        # Import here to avoid circular import
+        from intel.pipeline import get_cost_tracker
+
+        tracker = get_cost_tracker()
+        if tracker and (response.input_tokens or response.output_tokens):
+            tracker.track(
+                response.input_tokens,
+                response.output_tokens,
+                response.model,
+            )
