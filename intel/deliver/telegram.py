@@ -38,7 +38,12 @@ class TelegramDelivery(BaseDelivery):
         chunks = self._split_message(message, max_len)
         try:
             for chunk in chunks:
-                await bot.send_message(chat_id=chat_id, text=chunk)
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=chunk,
+                    parse_mode="HTML",
+                    disable_web_page_preview=True,
+                )
             logger.info("Sent %d message(s) to Telegram", len(chunks))
             return True
         except Exception:
@@ -51,7 +56,8 @@ class TelegramDelivery(BaseDelivery):
         try:
             await bot.send_message(
                 chat_id=chat_id,
-                text="Intel Summarizer — test message. Configuration OK.",
+                text="<b>Intel Summarizer</b> — test message. Configuration OK.",
+                parse_mode="HTML",
             )
             logger.info("Telegram test message sent successfully")
             return True

@@ -1,8 +1,10 @@
-"""Format the final digest as Markdown for delivery."""
+"""Format the final digest as Telegram HTML for delivery."""
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
+from html import escape
 
 from intel.models import (
     Cluster,
@@ -13,24 +15,38 @@ from intel.models import (
     Trend,
 )
 
-TOPIC_LABELS = {
-    "tech": "TECH & AI",
-    "geopolitics": "GEOPOLITICS",
-    "finance": "FINANCE",
+TOPIC_EMOJI = {
+    "tech": "\U0001f4bb",       # laptop
+    "geopolitics": "\U0001f30d",  # globe
+    "finance": "\U0001f4c8",    # chart
 }
 
-CONFIDENCE_ICONS = {
-    "confirmed": "CONFIRMED",
-    "likely": "LIKELY",
-    "developing": "DEVELOPING",
-    "speculative": "SPECULATIVE",
+CONFIDENCE_BADGE = {
+    "confirmed": "\u2705 CONFIRMED",
+    "likely": "\U0001f7e2 LIKELY",
+    "developing": "\U0001f7e1 DEVELOPING",
+    "speculative": "\U0001f7e0 SPECULATIVE",
 }
 
-TREND_ICONS = {
-    "escalating": "↑ ESCALATING",
-    "continuing": "→ CONTINUING",
-    "de-escalating": "↓ DE-ESCALATING",
+TREND_BADGE = {
+    "escalating": "\u2b06\ufe0f ESCALATING",
+    "continuing": "\u27a1\ufe0f CONTINUING",
+    "de-escalating": "\u2b07\ufe0f DE-ESCALATING",
 }
+
+
+def _strip_html(text: str) -> str:
+    """Remove HTML tags and decode entities from text."""
+    clean = re.sub(r"<[^>]+>", "", text)
+    clean = clean.replace("&nbsp;", " ").replace("&amp;", "&")
+    clean = clean.replace("&lt;", "<").replace("&gt;", ">")
+    clean = re.sub(r"\s+", " ", clean).strip()
+    return clean
+
+
+def _e(text: str) -> str:
+    """Escape text for Telegram HTML."""
+    return escape(str(text))
 
 
 def format_digest(
@@ -41,14 +57,14 @@ def format_digest(
     run: PipelineRun | None = None,
     trends: list[Trend] | None = None,
 ) -> str:
-    """Format the complete intel digest as Markdown text."""
+    """Format the complete intel digest as Telegram HTML."""
     now = datetime.utcnow()
-    period = "Morning" if now.hour < 12 else "Evening"
+    period = "\U0001f305 Morning" if now.hour < 12 else "\U0001f307 Evening"
     date_str = now.strftime("%b %d, %Y")
 
     lines = [
-        f"INTEL DIGEST — {date_str} ({period})",
-        "━" * 32,
+        f"<b>\U0001f4e1 INTEL DIGEST</b> \u2014 {_e(date_str)} ({period})",
+        "\u2500" * 28,
         "",
     ]
 
@@ -71,12 +87,13 @@ def format_digest(
         if not items:
             continue
 
-        label = TOPIC_LABELS.get(topic, topic.upper())
-        lines.append(label)
+        emoji = TOPIC_EMOJI.get(topic, "\U0001f4cc")
+        label = topic.upper().replace("TECH", "TECH & AI")
+        lines.append(f"{emoji} <b>{label}</b>")
         lines.append("")
 
         for cluster, summary in items:
-            conf = CONFIDENCE_ICONS.get(
+            badge = CONFIDENCE_BADGE.get(
                 summary.confidence, summary.confidence.upper(),
             )
             sources_str = (
@@ -85,53 +102,49 @@ def format_digest(
                 else "Multiple sources"
             )
 
-            lines.append(f"{counter}. [{conf}] {cluster.label}")
-            lines.append(f"   What: {summary.what_happened}")
-            lines.append(f"   Why: {summary.why_it_matters}")
-            lines.append(f"   Next: {summary.whats_next}")
-            lines.append(f"   (Sources: {sources_str})")
+            lines.append(f"<b>{counter}.</b> [{badge}] <b>{_e(cluster.label)}</b>")
+            lines.append(f"   \U0001f4cc <i>What:</i> {_e(summary.what_happened)}")
+            lines.append(f"   \u2753 <i>Why:</i> {_e(summary.why_it_matters)}")
+            lines.append(f"   \u27a1 <i>Next:</i> {_e(summary.whats_next)}")
+            lines.append(f"   <i>({_e(sources_str)})</i>")
             lines.append("")
             counter += 1
 
     # Developing stories section
     if trends:
-        lines.append("DEVELOPING STORIES")
+        lines.append("\U0001f4f0 <b>DEVELOPING STORIES</b>")
         lines.append("")
         for trend in trends:
-            icon = TREND_ICONS.get(trend.trend_type, trend.trend_type)
-            lines.append(
-                f"- [{icon}] {trend.current_label}"
-            )
+            badge = TREND_BADGE.get(trend.trend_type, trend.trend_type)
+            lines.append(f"\u2022 [{badge}] {_e(trend.current_label)}")
             if trend.previous_label != trend.current_label:
-                lines.append(
-                    f"  Previously: {trend.previous_label}"
-                )
+                lines.append(f"  <i>Previously: {_e(trend.previous_label)}</i>")
         lines.append("")
 
     # Cross-references section
     if cross_refs:
-        lines.append("CROSS-REFERENCES")
+        lines.append("\U0001f517 <b>CROSS-REFERENCES</b>")
         lines.append("")
         for xref in cross_refs:
             type_label = xref.ref_type.upper().replace("_", " ")
-            lines.append(f"- [{type_label}] {xref.description}")
+            lines.append(f"\u2022 <b>[{_e(type_label)}]</b> {_e(xref.description)}")
         lines.append("")
 
     # Projections section
     if projections:
-        lines.append("PROJECTIONS")
+        lines.append("\U0001f52e <b>PROJECTIONS</b>")
         lines.append("")
         for proj in projections:
             conf = proj.confidence.upper()
             lines.append(
-                f"- [{conf}, {proj.timeframe}] {proj.description}",
+                f"\u2022 <b>[{_e(conf)}, {_e(proj.timeframe)}]</b> {_e(proj.description)}",
             )
         lines.append("")
 
     # Footer
     total_articles = sum(c.article_count for c in clusters)
     n_clusters = len(clusters)
-    lines.append("━" * 32)
+    lines.append("\u2500" * 28)
 
     footer_parts = [
         f"{total_articles} articles",
@@ -139,7 +152,7 @@ def format_digest(
     ]
     if run and run.llm_cost_usd > 0:
         footer_parts.append(f"${run.llm_cost_usd:.2f}")
-    lines.append(" | ".join(footer_parts))
+    lines.append(f"<i>{' | '.join(footer_parts)}</i>")
 
     return "\n".join(lines)
 
@@ -150,14 +163,14 @@ def format_fallback_digest(
 ) -> str:
     """Format a raw article list when LLM summarization fails."""
     now = datetime.utcnow()
-    period = "Morning" if now.hour < 12 else "Evening"
+    period = "\U0001f305 Morning" if now.hour < 12 else "\U0001f307 Evening"
     date_str = now.strftime("%b %d, %Y")
 
     lines = [
-        f"INTEL DIGEST — {date_str} ({period})",
-        "━" * 32,
+        f"<b>\U0001f4e1 INTEL DIGEST</b> \u2014 {_e(date_str)} ({period})",
+        "\u2500" * 28,
         "",
-        "⚠ LLM unavailable — raw article list below.",
+        "\u26a0\ufe0f <i>LLM unavailable \u2014 raw article list below.</i>",
         "",
     ]
 
@@ -171,23 +184,26 @@ def format_fallback_digest(
         if not items:
             continue
 
-        label = TOPIC_LABELS.get(topic, topic.upper())
-        lines.append(label)
+        emoji = TOPIC_EMOJI.get(topic, "\U0001f4cc")
+        label = topic.upper().replace("TECH", "TECH & AI")
+        lines.append(f"{emoji} <b>{label}</b>")
         lines.append("")
 
-        for article in items[:10]:
-            lines.append(f"{counter}. {article.title}")
-            lines.append(f"   Source: {article.source_name}")
+        for article in items[:15]:
+            title = _e(_strip_html(article.title))
+            source = _e(article.source_name)
+            lines.append(f"<b>{counter}.</b> {title}")
+            lines.append(f"   <i>{source}</i>")
             if article.content and len(article.content) > 50:
-                snippet = article.content[:150].replace("\n", " ")
-                lines.append(f"   {snippet}...")
+                snippet = _strip_html(article.content)[:120]
+                lines.append(f"   {_e(snippet)}...")
             lines.append("")
             counter += 1
 
-    lines.append("━" * 32)
+    lines.append("\u2500" * 28)
     footer_parts = [f"{len(articles)} articles", "fallback mode"]
     if run and run.llm_cost_usd > 0:
         footer_parts.append(f"${run.llm_cost_usd:.2f}")
-    lines.append(" | ".join(footer_parts))
+    lines.append(f"<i>{' | '.join(footer_parts)}</i>")
 
     return "\n".join(lines)

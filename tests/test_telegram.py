@@ -53,7 +53,10 @@ async def test_send_calls_bot(mock_bot_cls, telegram_config):
 
     assert result is True
     mock_bot.send_message.assert_called_once_with(
-        chat_id="12345", text="Test message",
+        chat_id="12345",
+        text="Test message",
+        parse_mode="HTML",
+        disable_web_page_preview=True,
     )
 
 
