@@ -1,0 +1,114 @@
+llm:
+  providers:
+    deepseek:
+      type: "openai_compatible"
+      api_key: "${DEEPSEEK_API_KEY}"
+      base_url: "https://api.deepseek.com"
+      default_model: "deepseek-chat"
+
+    claude:
+      type: "anthropic"
+      api_key: "${ANTHROPIC_API_KEY}"
+      default_model: "claude-sonnet-4-5-20250514"
+
+    # Uncomment for local LLM via Ollama:
+    # ollama:
+    #   type: "openai_compatible"
+    #   base_url: "http://localhost:11434/v1"
+    #   api_key: "ollama"
+    #   default_model: "llama3.1:8b"
+
+  tasks:
+    summarize: { provider: "deepseek" }
+    label_clusters: { provider: "deepseek" }
+    crossref: { provider: "claude" }
+    projections: { provider: "claude" }
+    deep_dive: { provider: "claude", model: "claude-opus-4-6" }
+
+sources:
+  rss:
+    enabled: true
+    feeds:
+      tech:
+        - url: "https://feeds.arstechnica.com/arstechnica/technology-lab"
+          name: "Ars Technica"
+        - url: "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml"
+          name: "The Verge AI"
+        - url: "https://techcrunch.com/category/artificial-intelligence/feed/"
+          name: "TechCrunch AI"
+        - url: "https://blog.google/technology/ai/rss/"
+          name: "Google AI Blog"
+        - url: "https://openai.com/blog/rss.xml"
+          name: "OpenAI Blog"
+      geopolitics:
+        - url: "https://feeds.bbci.co.uk/news/world/rss.xml"
+          name: "BBC World"
+        - url: "https://rss.nytimes.com/services/xml/rss/nyt/World.xml"
+          name: "NYT World"
+        - url: "https://www.aljazeera.com/xml/rss/all.xml"
+          name: "Al Jazeera"
+      finance:
+        - url: "https://feeds.bloomberg.com/markets/news.rss"
+          name: "Bloomberg Markets"
+        - url: "https://www.ft.com/?format=rss"
+          name: "Financial Times"
+        - url: "https://finance.yahoo.com/news/rssindex"
+          name: "Yahoo Finance"
+
+  gdelt:
+    enabled: false
+    max_articles: 50
+
+  serper:
+    enabled: false
+    api_key: "${SERPER_API_KEY}"
+    queries:
+      tech:
+        - "artificial intelligence breakthroughs"
+        - "AI regulation news"
+      geopolitics:
+        - "geopolitical tensions"
+        - "international relations major events"
+      finance:
+        - "financial markets major moves"
+        - "central bank policy changes"
+
+process:
+  dedup:
+    enabled: true
+    hash_exact: true
+    cosine_threshold: 0.85
+
+  cluster:
+    enabled: true
+    distance_threshold: 0.6
+    min_cluster_size: 2
+
+  embeddings:
+    model: "minishlab/potion-base-8M"
+
+analyze:
+  crossref:
+    enabled: true
+  projections:
+    enabled: true
+  trends:
+    enabled: false
+
+deliver:
+  telegram:
+    enabled: true
+    bot_token: "${TELEGRAM_BOT_TOKEN}"
+    chat_id: "${TELEGRAM_CHAT_ID}"
+    max_message_length: 4096
+
+pipeline:
+  max_articles_per_topic: 30
+  max_article_age_hours: 24
+  topics:
+    - tech
+    - geopolitics
+    - finance
+
+database:
+  path: "data/intel.db"

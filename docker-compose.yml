@@ -1,0 +1,21 @@
+services:
+  intel:
+    build: .
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./config.yaml:/app/config.yaml:ro
+    restart: "no"
+
+  scheduler:
+    image: mcuadros/ofelia:latest
+    depends_on: [intel]
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    labels:
+      ofelia.job-exec.intel-morning.schedule: "0 6 * * *"
+      ofelia.job-exec.intel-morning.container: "intel"
+      ofelia.job-exec.intel-morning.command: "python -m intel run"
+      ofelia.job-exec.intel-evening.schedule: "0 18 * * *"
+      ofelia.job-exec.intel-evening.container: "intel"
+      ofelia.job-exec.intel-evening.command: "python -m intel run"
