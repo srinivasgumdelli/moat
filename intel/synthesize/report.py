@@ -4,7 +4,14 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from intel.models import Cluster, CrossReference, PipelineRun, Projection, Summary
+from intel.models import (
+    Cluster,
+    CrossReference,
+    PipelineRun,
+    Projection,
+    Summary,
+    Trend,
+)
 
 TOPIC_LABELS = {
     "tech": "TECH & AI",
@@ -19,6 +26,12 @@ CONFIDENCE_ICONS = {
     "speculative": "SPECULATIVE",
 }
 
+TREND_ICONS = {
+    "escalating": "↑ ESCALATING",
+    "continuing": "→ CONTINUING",
+    "de-escalating": "↓ DE-ESCALATING",
+}
+
 
 def format_digest(
     clusters: list[Cluster],
@@ -26,11 +39,11 @@ def format_digest(
     cross_refs: list[CrossReference] | None = None,
     projections: list[Projection] | None = None,
     run: PipelineRun | None = None,
+    trends: list[Trend] | None = None,
 ) -> str:
     """Format the complete intel digest as Markdown text."""
     now = datetime.utcnow()
-    hour = now.hour
-    period = "Morning" if hour < 12 else "Evening"
+    period = "Morning" if now.hour < 12 else "Evening"
     date_str = now.strftime("%b %d, %Y")
 
     lines = [
@@ -47,7 +60,9 @@ def format_digest(
         summary = summary_map.get(cluster.id)
         if not summary:
             continue
-        topic_clusters.setdefault(cluster.topic, []).append((cluster, summary))
+        topic_clusters.setdefault(
+            cluster.topic, [],
+        ).append((cluster, summary))
 
     # Render each topic section
     counter = 1
@@ -61,8 +76,14 @@ def format_digest(
         lines.append("")
 
         for cluster, summary in items:
-            conf = CONFIDENCE_ICONS.get(summary.confidence, summary.confidence.upper())
-            sources_str = ", ".join(summary.sources[:4]) if summary.sources else "Multiple sources"
+            conf = CONFIDENCE_ICONS.get(
+                summary.confidence, summary.confidence.upper(),
+            )
+            sources_str = (
+                ", ".join(summary.sources[:4])
+                if summary.sources
+                else "Multiple sources"
+            )
 
             lines.append(f"{counter}. [{conf}] {cluster.label}")
             lines.append(f"   What: {summary.what_happened}")
@@ -71,6 +92,21 @@ def format_digest(
             lines.append(f"   (Sources: {sources_str})")
             lines.append("")
             counter += 1
+
+    # Developing stories section
+    if trends:
+        lines.append("DEVELOPING STORIES")
+        lines.append("")
+        for trend in trends:
+            icon = TREND_ICONS.get(trend.trend_type, trend.trend_type)
+            lines.append(
+                f"- [{icon}] {trend.current_label}"
+            )
+            if trend.previous_label != trend.current_label:
+                lines.append(
+                    f"  Previously: {trend.previous_label}"
+                )
+        lines.append("")
 
     # Cross-references section
     if cross_refs:
@@ -87,7 +123,9 @@ def format_digest(
         lines.append("")
         for proj in projections:
             conf = proj.confidence.upper()
-            lines.append(f"- [{conf}, {proj.timeframe}] {proj.description}")
+            lines.append(
+                f"- [{conf}, {proj.timeframe}] {proj.description}",
+            )
         lines.append("")
 
     # Footer
@@ -95,7 +133,59 @@ def format_digest(
     n_clusters = len(clusters)
     lines.append("━" * 32)
 
-    footer_parts = [f"{total_articles} articles", f"{n_clusters} clusters"]
+    footer_parts = [
+        f"{total_articles} articles",
+        f"{n_clusters} clusters",
+    ]
+    if run and run.llm_cost_usd > 0:
+        footer_parts.append(f"${run.llm_cost_usd:.2f}")
+    lines.append(" | ".join(footer_parts))
+
+    return "\n".join(lines)
+
+
+def format_fallback_digest(
+    articles: list,
+    run: PipelineRun | None = None,
+) -> str:
+    """Format a raw article list when LLM summarization fails."""
+    now = datetime.utcnow()
+    period = "Morning" if now.hour < 12 else "Evening"
+    date_str = now.strftime("%b %d, %Y")
+
+    lines = [
+        f"INTEL DIGEST — {date_str} ({period})",
+        "━" * 32,
+        "",
+        "⚠ LLM unavailable — raw article list below.",
+        "",
+    ]
+
+    topic_articles: dict[str, list] = {}
+    for article in articles:
+        topic_articles.setdefault(article.topic, []).append(article)
+
+    counter = 1
+    for topic in ["tech", "geopolitics", "finance"]:
+        items = topic_articles.get(topic, [])
+        if not items:
+            continue
+
+        label = TOPIC_LABELS.get(topic, topic.upper())
+        lines.append(label)
+        lines.append("")
+
+        for article in items[:10]:
+            lines.append(f"{counter}. {article.title}")
+            lines.append(f"   Source: {article.source_name}")
+            if article.content and len(article.content) > 50:
+                snippet = article.content[:150].replace("\n", " ")
+                lines.append(f"   {snippet}...")
+            lines.append("")
+            counter += 1
+
+    lines.append("━" * 32)
+    footer_parts = [f"{len(articles)} articles", "fallback mode"]
     if run and run.llm_cost_usd > 0:
         footer_parts.append(f"${run.llm_cost_usd:.2f}")
     lines.append(" | ".join(footer_parts))
