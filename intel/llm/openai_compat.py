@@ -33,6 +33,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         response = await retry_async(
             self._do_complete, prompt, system, model,
             temperature, max_tokens,
+            max_retries=self.max_retries,
         )
         self._track_cost(response)
         return response
@@ -63,7 +64,7 @@ class OpenAICompatibleProvider(BaseLLMProvider):
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
-        async with httpx.AsyncClient(timeout=120) as client:
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
             resp = await client.post(url, json=payload, headers=headers)
             resp.raise_for_status()
             data = resp.json()

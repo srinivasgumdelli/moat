@@ -33,6 +33,7 @@ class AnthropicProvider(BaseLLMProvider):
         response = await retry_async(
             self._do_complete, prompt, system, model,
             temperature, max_tokens,
+            max_retries=self.max_retries,
         )
         self._track_cost(response)
         return response

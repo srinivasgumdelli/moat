@@ -18,6 +18,8 @@ llm:
       base_url: "http://ollama:11434/v1"
       api_key: "ollama"
       default_model: "llama3.2:3b"
+      max_retries: 5
+      timeout: 300
 
   tasks:
     summarize: { provider: "deepseek" }

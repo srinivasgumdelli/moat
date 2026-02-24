@@ -70,6 +70,8 @@ def get_llm_task_config(config: dict, task: str) -> dict:
         "api_key": provider_cfg.get("api_key", ""),
         "base_url": provider_cfg.get("base_url", ""),
         "model": model_override or provider_cfg.get("default_model", ""),
+        "max_retries": provider_cfg.get("max_retries", 3),
+        "timeout": provider_cfg.get("timeout", 120),
     }
 
 

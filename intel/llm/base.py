@@ -23,11 +23,20 @@ class LLMResponse:
 class BaseLLMProvider(ABC):
     """Base class for LLM providers."""
 
-    def __init__(self, api_key: str, base_url: str, default_model: str):
+    def __init__(
+        self,
+        api_key: str,
+        base_url: str,
+        default_model: str,
+        max_retries: int = 3,
+        timeout: int = 120,
+    ):
         self.api_key = api_key
         self.base_url = base_url
         self.default_model = default_model
         self.active_model = default_model
+        self.max_retries = max_retries
+        self.timeout = timeout
 
     @abstractmethod
     async def complete(
