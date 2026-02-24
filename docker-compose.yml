@@ -7,6 +7,15 @@ services:
       - ./config.yaml:/app/config.yaml:ro
     restart: "no"
 
+  ollama:
+    image: ollama/ollama:latest
+    profiles: [local-llm]
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+
   scheduler:
     image: mcuadros/ofelia:latest
     depends_on: [intel]
@@ -19,3 +28,6 @@ services:
       ofelia.job-exec.intel-evening.schedule: "0 18 * * *"
       ofelia.job-exec.intel-evening.container: "intel"
       ofelia.job-exec.intel-evening.command: "python -m intel run"
+
+volumes:
+  ollama_data:

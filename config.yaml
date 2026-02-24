@@ -11,12 +11,13 @@ llm:
       api_key: "${ANTHROPIC_API_KEY}"
       default_model: "claude-sonnet-4-5-20250514"
 
-    # Uncomment for local LLM via Ollama:
-    # ollama:
-    #   type: "openai_compatible"
-    #   base_url: "http://localhost:11434/v1"
-    #   api_key: "ollama"
-    #   default_model: "llama3.1:8b"
+    # Local LLM via Ollama (start with: docker compose --profile local-llm up ollama)
+    # Then pull a model: docker compose exec ollama ollama pull llama3.2:3b
+    ollama:
+      type: "openai_compatible"
+      base_url: "http://ollama:11434/v1"
+      api_key: "ollama"
+      default_model: "llama3.2:3b"
 
   tasks:
     summarize: { provider: "deepseek" }
