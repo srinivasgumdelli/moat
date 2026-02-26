@@ -127,7 +127,12 @@ class ClaudeCodeProvider(BaseLLMProvider):
         if schema:
             cmd.extend(["--json-schema", schema])
 
-        logger.debug("Running: claude -p --model %s (prompt: %d chars)", model_name, len(prompt))
+        task = _current_task.get() or "unknown"
+        logger.info(
+            "[%s] Starting claude -p --model %s (%d chars)",
+            task, model_name, len(prompt),
+        )
+        t0 = asyncio.get_event_loop().time()
 
         try:
             proc = await asyncio.create_subprocess_exec(
@@ -141,12 +146,20 @@ class ClaudeCodeProvider(BaseLLMProvider):
                 timeout=self.timeout,
             )
         except asyncio.TimeoutError:
-            logger.error("claude -p timed out after %ds", self.timeout)
+            elapsed = asyncio.get_event_loop().time() - t0
+            logger.error(
+                "[%s] claude -p timed out after %.1fs", task, elapsed,
+            )
             raise TimeoutError(f"claude -p timed out after {self.timeout}s")
+
+        elapsed = asyncio.get_event_loop().time() - t0
 
         if proc.returncode != 0:
             err = stderr.decode().strip()
-            logger.error("claude -p failed (rc=%d): %s", proc.returncode, err[:500])
+            logger.error(
+                "[%s] claude -p failed (rc=%d, %.1fs): %s",
+                task, proc.returncode, elapsed, err[:500],
+            )
             raise RuntimeError(f"claude -p exited with code {proc.returncode}: {err[:200]}")
 
         raw = stdout.decode()
@@ -165,6 +178,11 @@ class ClaudeCodeProvider(BaseLLMProvider):
             input_tokens = 0
             output_tokens = 0
             model_used = model_name
+
+        logger.info(
+            "[%s] claude -p done in %.1fs (%d+%d tokens, $%.4f)",
+            task, elapsed, input_tokens, output_tokens, cost,
+        )
 
         response = LLMResponse(
             text=text,
