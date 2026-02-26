@@ -12,8 +12,13 @@ class BaseDelivery(ABC):
         self.config = config
 
     @abstractmethod
-    async def send(self, message: str) -> bool:
-        """Send a message. Returns True on success."""
+    async def send(
+        self,
+        message: str,
+        attachment: bytes | None = None,
+        attachment_name: str | None = None,
+    ) -> bool:
+        """Send a message, optionally with a file attachment. Returns True on success."""
         ...
 
     @abstractmethod

@@ -109,6 +109,7 @@ deliver:
     bot_token: "${TELEGRAM_BOT_TOKEN}"
     chat_id: "${TELEGRAM_CHAT_ID}"
     max_message_length: 4096
+    pdf_digest: true
 
 pipeline:
   max_articles_per_topic: 30

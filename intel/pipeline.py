@@ -24,6 +24,7 @@ from intel.llm.batch import estimate_cost
 from intel.models import PipelineRun
 from intel.process.cluster import ClusterProcessor
 from intel.process.dedup import DedupProcessor
+from intel.synthesize.pdf import format_pdf_caption, render_pdf_digest
 from intel.synthesize.report import format_digest, format_fallback_digest
 from intel.synthesize.summarizer import summarize_all_clusters
 
@@ -192,6 +193,22 @@ async def run_pipeline(config: dict) -> None:
             digest = format_fallback_digest(articles, run)
         logger.info("Digest formatted (%d chars)", len(digest))
 
+        # --- Generate PDF if enabled ---
+        pdf_bytes = None
+        pdf_caption = None
+        telegram_cfg = config.get("deliver", {}).get("telegram", {})
+        if telegram_cfg.get("pdf_digest", False) and summaries:
+            try:
+                pdf_bytes = render_pdf_digest(
+                    all_clusters, summaries, cross_refs,
+                    projections, run, trends,
+                )
+                pdf_caption = format_pdf_caption(all_clusters, run)
+                logger.info("PDF digest generated (%d bytes)", len(pdf_bytes))
+            except Exception:
+                logger.exception("PDF generation failed — falling back to text")
+                pdf_bytes = None
+
         # --- Deliver ---
         for channel_name, channel_cls in CHANNELS.items():
             channel_cfg = config.get("deliver", {}).get(channel_name, {})
@@ -199,7 +216,15 @@ async def run_pipeline(config: dict) -> None:
                 continue
             channel = channel_cls(config)
             try:
-                success = await channel.send(digest)
+                if pdf_bytes and channel_name == "telegram":
+                    date_str = datetime.utcnow().strftime("%Y-%m-%d")
+                    success = await channel.send(
+                        pdf_caption,
+                        attachment=pdf_bytes,
+                        attachment_name=f"intel-digest-{date_str}.pdf",
+                    )
+                else:
+                    success = await channel.send(digest)
                 if success:
                     logger.info("Delivered via %s", channel_name)
                 else:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import logging
 
 from telegram import Bot
@@ -28,13 +29,35 @@ class TelegramDelivery(BaseDelivery):
             raise ValueError("Telegram bot_token and chat_id must be configured")
         return Bot(token=token), str(chat_id)
 
-    async def send(self, message: str) -> bool:
-        """Send a message, splitting if it exceeds Telegram's limit."""
+    async def send(
+        self,
+        message: str,
+        attachment: bytes | None = None,
+        attachment_name: str | None = None,
+    ) -> bool:
+        """Send a message, optionally as a document attachment."""
         bot, chat_id = self._get_bot()
+
+        # Document mode: send PDF (or other file) with caption
+        if attachment is not None:
+            try:
+                doc = io.BytesIO(attachment)
+                doc.name = attachment_name or "document.pdf"
+                await bot.send_document(
+                    chat_id=chat_id,
+                    document=doc,
+                    caption=message[:1024],
+                )
+                logger.info("Sent document '%s' to Telegram", doc.name)
+                return True
+            except Exception:
+                logger.exception("Failed to send Telegram document")
+                return False
+
+        # Text mode: split long messages
         max_len = self.config.get("deliver", {}).get("telegram", {}).get(
             "max_message_length", 4096
         )
-
         chunks = self._split_message(message, max_len)
         try:
             for chunk in chunks:
