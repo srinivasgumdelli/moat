@@ -12,7 +12,10 @@ TOPIC: {topic}
 ARTICLES:
 {articles}
 
-Respond in EXACTLY this JSON format (no markdown, no extra text):
+IMPORTANT: You MUST respond with ONLY valid JSON — no markdown fences, no commentary, \
+no analyst notes. Even if the articles are unrelated or low-quality, you must still \
+produce the JSON. If articles are weakly connected, summarize the most significant one.
+
 {{
     "label": "Short descriptive label for this story (5-8 words)",
     "confidence": "confirmed|likely|developing|speculative",
@@ -30,8 +33,11 @@ SOURCE: {source}
 CONTENT:
 {content}
 
-Respond in EXACTLY this JSON format (no markdown, no extra text):
+IMPORTANT: You MUST respond with ONLY valid JSON — no markdown fences, no commentary, \
+no analyst notes. Even if the article seems low-quality or off-topic, still produce the JSON.
+
 {{
+    "label": "Short descriptive label for this story (5-8 words)",
     "confidence": "confirmed|likely|developing|speculative",
     "what_happened": "1-2 sentences on what happened",
     "why_it_matters": "1-2 sentences on significance and implications",
