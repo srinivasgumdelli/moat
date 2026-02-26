@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime
 
@@ -67,27 +68,32 @@ async def run_pipeline(config: dict) -> None:
     logger.info("Pipeline run #%d started", run_id)
 
     try:
-        # --- Ingest ---
+        # --- Ingest (parallel across sources × topics) ---
         active_sources = get_active_sources(config)
         topics = get_active_topics(config)
-        all_articles = []
 
-        for source_name in active_sources:
-            if source_name not in SOURCES:
-                logger.warning(
-                    "Source '%s' enabled but not registered", source_name,
+        async def _fetch(source_name: str, topic: str) -> list:
+            try:
+                source = SOURCES[source_name](config)
+                return await source.fetch(topic)
+            except Exception:
+                logger.exception(
+                    "Source '%s' failed for topic '%s'",
+                    source_name, topic,
                 )
-                continue
-            source = SOURCES[source_name](config)
-            for topic in topics:
-                try:
-                    articles = await source.fetch(topic)
-                    all_articles.extend(articles)
-                except Exception:
-                    logger.exception(
-                        "Source '%s' failed for topic '%s'",
-                        source_name, topic,
-                    )
+                return []
+
+        valid_sources = [s for s in active_sources if s in SOURCES]
+        for s in active_sources:
+            if s not in SOURCES:
+                logger.warning("Source '%s' enabled but not registered", s)
+
+        fetch_results = await asyncio.gather(*[
+            _fetch(source_name, topic)
+            for source_name in valid_sources
+            for topic in topics
+        ])
+        all_articles = [a for batch in fetch_results for a in batch]
 
         run.articles_fetched = len(all_articles)
         logger.info(
@@ -156,32 +162,35 @@ async def run_pipeline(config: dict) -> None:
                 "All summarization failed — using fallback digest",
             )
 
-        # --- Analyze ---
+        # --- Analyze (parallel) ---
         cross_refs = []
         projections = []
         trends = []
 
         if summaries:
-            for analyzer_name, analyzer_cls in ANALYZERS.items():
-                analyzer = analyzer_cls(config)
+            async def _run_analyzer(name: str) -> tuple[str, list]:
+                analyzer = ANALYZERS[name](config)
                 try:
-                    results = await analyzer.analyze(
-                        all_clusters, summaries,
-                    )
-                    if analyzer_name == "crossref":
-                        cross_refs = results
-                        for xref in cross_refs:
-                            insert_cross_reference(conn, xref)
-                    elif analyzer_name == "projections":
-                        projections = results
-                        for proj in projections:
-                            insert_projection(conn, proj, run_id)
-                    elif analyzer_name == "trends":
-                        trends = results
+                    return name, await analyzer.analyze(all_clusters, summaries)
                 except Exception:
-                    logger.exception(
-                        "Analyzer '%s' failed", analyzer_name,
-                    )
+                    logger.exception("Analyzer '%s' failed", name)
+                    return name, []
+
+            analyzer_results = await asyncio.gather(*[
+                _run_analyzer(name) for name in ANALYZERS
+            ])
+
+            for analyzer_name, results in analyzer_results:
+                if analyzer_name == "crossref":
+                    cross_refs = results
+                    for xref in cross_refs:
+                        insert_cross_reference(conn, xref)
+                elif analyzer_name == "projections":
+                    projections = results
+                    for proj in projections:
+                        insert_projection(conn, proj, run_id)
+                elif analyzer_name == "trends":
+                    trends = results
 
         # --- Format report ---
         if summaries:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import json
 import logging
 
@@ -77,14 +78,15 @@ TASK_SCHEMAS: dict[str, str] = {
     "deep_dive": SUMMARY_SCHEMA,
 }
 
-# Module-level hint for the current task — set by callers before complete()
-_current_task: str = ""
+# Coroutine-safe task hint — each asyncio task gets its own value
+_current_task: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "_current_task", default="",
+)
 
 
 def set_current_task(task: str) -> None:
-    """Set the current task name for JSON schema selection."""
-    global _current_task
-    _current_task = task
+    """Set the current task name for JSON schema selection (coroutine-safe)."""
+    _current_task.set(task)
 
 
 @register_provider("claude_code")
@@ -121,7 +123,7 @@ class ClaudeCodeProvider(BaseLLMProvider):
             cmd.extend(["--system-prompt", system])
 
         # Add JSON schema for structured output when available
-        schema = TASK_SCHEMAS.get(_current_task, "")
+        schema = TASK_SCHEMAS.get(_current_task.get(), "")
         if schema:
             cmd.extend(["--json-schema", schema])
 
