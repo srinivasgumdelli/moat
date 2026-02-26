@@ -89,6 +89,9 @@ async def summarize_cluster(config: dict, cluster: Cluster) -> Summary:
     data = _extract_json(response.text)
     if data is None:
         logger.warning("Failed to parse summary for cluster %s, using raw text", cluster.label)
+        # Use first article title as label if still default
+        if cluster.label.startswith("Cluster ") and cluster.articles:
+            cluster.label = cluster.articles[0].title
         return Summary(
             cluster_id=cluster.id or 0,
             depth="briefing",
@@ -136,6 +139,12 @@ async def _summarize_single(config: dict, cluster: Cluster, article: Article) ->
             "whats_next": "Retry.",
             "confidence": "developing",
         }
+
+    # Update cluster label from LLM or fall back to article title
+    if data.get("label"):
+        cluster.label = data["label"]
+    elif cluster.label.startswith("Cluster "):
+        cluster.label = article.title
 
     return Summary(
         cluster_id=cluster.id or 0,
