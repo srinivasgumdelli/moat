@@ -6,6 +6,8 @@ services:
       - ./data:/app/data
       - ./config.yaml:/app/config.yaml:ro
     restart: "no"
+    # For claude_code provider: uncomment to mount Claude CLI + auth
+    # profiles: [api]  # skip this service when using claude_code locally
 
   ollama:
     image: ollama/ollama:latest
