@@ -10,6 +10,23 @@ from typing import Any
 import yaml
 
 
+def _load_dotenv(path: str | Path = ".env") -> None:
+    """Load a .env file into os.environ (without overwriting existing vars)."""
+    env_path = Path(path)
+    if not env_path.is_file():
+        return
+    with open(env_path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, _, value = line.partition("=")
+            key = key.strip()
+            value = value.strip().strip("'\"")
+            if key and key not in os.environ:
+                os.environ[key] = value
+
+
 def _resolve_env_vars(value: Any) -> Any:
     """Recursively resolve ${ENV_VAR} patterns in config values."""
     if isinstance(value, str):
@@ -33,6 +50,8 @@ def _resolve_env_vars(value: Any) -> Any:
 
 def load_config(path: str | Path = "config.yaml") -> dict[str, Any]:
     """Load config from YAML file and resolve environment variables."""
+    _load_dotenv()
+
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"Config file not found: {path}")
