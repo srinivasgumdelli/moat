@@ -154,3 +154,35 @@ async def test_summarize_all_clusters_handles_failure(
 
     # First fails, second succeeds
     assert len(summaries) == 1
+
+
+@pytest.mark.asyncio
+@patch("intel.synthesize.summarizer.get_provider_for_task")
+async def test_summarize_handles_smart_quotes(
+    mock_get_provider, summarizer_config,
+):
+    """Summarizer parses JSON containing curly/smart quotes."""
+    # Simulate LLM returning JSON with smart quotes (common with article content)
+    smart_json = (
+        '```json\n'
+        '{\n'
+        '  "confidence": "confirmed",\n'
+        '  "what_happened": "Anthropic launched \u201cClaude\u2019s Corner\u201d newsletter.",\n'
+        '  "why_it_matters": "Strategic brand move.",\n'
+        '  "whats_next": "Monitor adoption.",\n'
+        '  "sources": ["The Verge AI"]\n'
+        '}\n'
+        '```'
+    )
+    mock_provider = AsyncMock()
+    mock_provider.complete.return_value = LLMResponse(
+        text=smart_json, input_tokens=50, output_tokens=30, model="test",
+    )
+    mock_get_provider.return_value = mock_provider
+
+    cluster = _make_cluster(2)
+    summary = await summarize_cluster(summarizer_config, cluster)
+
+    assert "Claude" in summary.what_happened
+    assert summary.confidence == "confirmed"
+    assert "Parse error" not in summary.why_it_matters

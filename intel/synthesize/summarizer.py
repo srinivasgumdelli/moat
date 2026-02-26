@@ -13,29 +13,52 @@ from intel.models import Article, Cluster, Summary
 logger = logging.getLogger(__name__)
 
 
+def _normalize_quotes(text: str) -> str:
+    """Replace smart/curly quotes with straight quotes for JSON parsing."""
+    return (
+        text
+        .replace("\u201c", '"')   # left double quote
+        .replace("\u201d", '"')   # right double quote
+        .replace("\u2018", "'")   # left single quote
+        .replace("\u2019", "'")   # right single quote
+        .replace("\u2033", '"')   # double prime
+        .replace("\u2032", "'")   # prime
+    )
+
+
+def _try_parse(text: str) -> dict | None:
+    """Try json.loads with and without quote normalization."""
+    try:
+        return json.loads(text)
+    except (json.JSONDecodeError, ValueError):
+        pass
+    try:
+        return json.loads(_normalize_quotes(text))
+    except (json.JSONDecodeError, ValueError):
+        pass
+    return None
+
+
 def _extract_json(text: str) -> dict | None:
     """Extract JSON from LLM output that may contain markdown fences or extra text."""
     # Try raw parse first
-    try:
-        return json.loads(text)
-    except json.JSONDecodeError:
-        pass
+    result = _try_parse(text)
+    if result is not None:
+        return result
 
     # Strip markdown code fences
     fenced = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
     if fenced:
-        try:
-            return json.loads(fenced.group(1))
-        except json.JSONDecodeError:
-            pass
+        result = _try_parse(fenced.group(1))
+        if result is not None:
+            return result
 
     # Find first { ... } block
     brace = re.search(r"\{.*\}", text, re.DOTALL)
     if brace:
-        try:
-            return json.loads(brace.group(0))
-        except json.JSONDecodeError:
-            pass
+        result = _try_parse(brace.group(0))
+        if result is not None:
+            return result
 
     return None
 
