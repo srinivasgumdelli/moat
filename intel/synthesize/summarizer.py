@@ -126,12 +126,19 @@ async def _summarize_single(config: dict, cluster: Cluster, article: Article) ->
 
 
 async def summarize_all_clusters(config: dict, clusters: list[Cluster]) -> list[Summary]:
-    """Summarize all clusters, returning list of Summary objects."""
-    summaries = []
-    for cluster in clusters:
-        try:
-            summary = await summarize_cluster(config, cluster)
-            summaries.append(summary)
-        except Exception:
-            logger.exception("Failed to summarize cluster: %s", cluster.label)
-    return summaries
+    """Summarize all clusters concurrently, returning list of Summary objects."""
+    import asyncio
+
+    max_concurrent = config.get("pipeline", {}).get("max_concurrent_summaries", 10)
+    sem = asyncio.Semaphore(max_concurrent)
+
+    async def _safe_summarize(cluster: Cluster) -> Summary | None:
+        async with sem:
+            try:
+                return await summarize_cluster(config, cluster)
+            except Exception:
+                logger.exception("Failed to summarize cluster: %s", cluster.label)
+                return None
+
+    results = await asyncio.gather(*[_safe_summarize(c) for c in clusters])
+    return [s for s in results if s is not None]
