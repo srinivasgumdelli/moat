@@ -4,12 +4,40 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 
 from intel.llm import get_provider_for_task
 from intel.llm.prompts import SUMMARIZE_CLUSTER, SUMMARIZE_SINGLE, SYSTEM_ANALYST
 from intel.models import Article, Cluster, Summary
 
 logger = logging.getLogger(__name__)
+
+
+def _extract_json(text: str) -> dict | None:
+    """Extract JSON from LLM output that may contain markdown fences or extra text."""
+    # Try raw parse first
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
+
+    # Strip markdown code fences
+    fenced = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
+    if fenced:
+        try:
+            return json.loads(fenced.group(1))
+        except json.JSONDecodeError:
+            pass
+
+    # Find first { ... } block
+    brace = re.search(r"\{.*\}", text, re.DOTALL)
+    if brace:
+        try:
+            return json.loads(brace.group(0))
+        except json.JSONDecodeError:
+            pass
+
+    return None
 
 
 async def summarize_cluster(config: dict, cluster: Cluster) -> Summary:
@@ -35,9 +63,8 @@ async def summarize_cluster(config: dict, cluster: Cluster) -> Summary:
 
     response = await provider.complete(prompt, system=SYSTEM_ANALYST)
 
-    try:
-        data = json.loads(response.text)
-    except json.JSONDecodeError:
+    data = _extract_json(response.text)
+    if data is None:
         logger.warning("Failed to parse summary for cluster %s, using raw text", cluster.label)
         return Summary(
             cluster_id=cluster.id or 0,
@@ -77,9 +104,8 @@ async def _summarize_single(config: dict, cluster: Cluster, article: Article) ->
 
     response = await provider.complete(prompt, system=SYSTEM_ANALYST)
 
-    try:
-        data = json.loads(response.text)
-    except json.JSONDecodeError:
+    data = _extract_json(response.text)
+    if data is None:
         logger.warning("Failed to parse single summary, using raw text")
         data = {
             "what_happened": response.text[:500],

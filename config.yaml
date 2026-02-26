@@ -11,6 +11,11 @@ llm:
       api_key: "${ANTHROPIC_API_KEY}"
       default_model: "claude-sonnet-4-5-20250514"
 
+    claude_cli:
+      type: "claude_code"
+      default_model: "sonnet"
+      timeout: 120
+
     # Local LLM via Ollama (start with: docker compose --profile local-llm up ollama)
     # Then pull a model: docker compose exec ollama ollama pull llama3.2:3b
     ollama:
@@ -22,11 +27,11 @@ llm:
       timeout: 300
 
   tasks:
-    summarize: { provider: "deepseek" }
-    label_clusters: { provider: "deepseek" }
-    crossref: { provider: "claude" }
-    projections: { provider: "claude" }
-    deep_dive: { provider: "claude", model: "claude-opus-4-6" }
+    summarize: { provider: "claude_cli" }
+    label_clusters: { provider: "claude_cli" }
+    crossref: { provider: "claude_cli" }
+    projections: { provider: "claude_cli" }
+    deep_dive: { provider: "claude_cli", model: "opus" }
 
 sources:
   rss:

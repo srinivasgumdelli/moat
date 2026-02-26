@@ -47,9 +47,15 @@ def get_provider_for_task(config: dict, task: str) -> BaseLLMProvider:
 
     provider = _provider_instances[cache_key]
     provider.active_model = model
+
+    # Set task hint for providers that use it (e.g. claude_code JSON schemas)
+    from intel.llm.claude_code import set_current_task
+    set_current_task(task)
+
     return provider
 
 
 # Import implementations to trigger registration
 from intel.llm.anthropic_provider import AnthropicProvider  # noqa: E402, F401
+from intel.llm.claude_code import ClaudeCodeProvider  # noqa: E402, F401
 from intel.llm.openai_compat import OpenAICompatibleProvider  # noqa: E402, F401
