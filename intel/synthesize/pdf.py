@@ -80,6 +80,32 @@ def _find_font(paths: list[str]) -> str | None:
     return None
 
 
+# Unicode → latin-1-safe replacements for Helvetica fallback
+_LATIN1_MAP = str.maketrans({
+    "\u2014": "--",   # em dash
+    "\u2013": "-",    # en dash
+    "\u2018": "'",    # left single quote
+    "\u2019": "'",    # right single quote
+    "\u201c": '"',    # left double quote
+    "\u201d": '"',    # right double quote
+    "\u2026": "...",  # ellipsis
+    "\u2022": "*",    # bullet
+    "\u2032": "'",    # prime
+    "\u2033": '"',    # double prime
+    "\u00a0": " ",    # non-breaking space
+})
+
+
+def _safe_text(text: str, use_ttf: bool) -> str:
+    """Sanitize text for the active font encoding."""
+    if use_ttf:
+        return text
+    # Helvetica is latin-1 only — replace known Unicode chars
+    result = text.translate(_LATIN1_MAP)
+    # Drop any remaining non-latin-1 characters
+    return result.encode("latin-1", errors="replace").decode("latin-1")
+
+
 class DigestPDF(FPDF):
     """Custom PDF with styled header and footer for the intel digest."""
 
@@ -104,6 +130,10 @@ class DigestPDF(FPDF):
     def font_name(self) -> str:
         return self._font_family
 
+    def _t(self, text: str) -> str:
+        """Sanitize text for the active font encoding."""
+        return _safe_text(text, self._use_ttf)
+
     def header(self):
         # Navy header bar
         self.set_fill_color(*NAVY)
@@ -112,7 +142,7 @@ class DigestPDF(FPDF):
         self.set_font(self.font_name, "B", 14)
         self.set_text_color(*WHITE)
         self.set_y(5)
-        self.cell(0, 12, f"INTEL DIGEST  --  {self.date_str} ({self.period})", align="C")
+        self.cell(0, 12, self._t(f"INTEL DIGEST  --  {self.date_str} ({self.period})"), align="C")
         self.ln(20)
 
     def footer(self):
@@ -125,7 +155,7 @@ class DigestPDF(FPDF):
         """Render a colored section heading."""
         self.set_font(self.font_name, "B", 12)
         self.set_text_color(*color)
-        self.cell(0, 10, title)
+        self.cell(0, 10, self._t(title))
         self.ln(8)
         # Underline
         self.set_draw_color(*color)
@@ -153,13 +183,13 @@ class DigestPDF(FPDF):
         self.set_font(self.font_name, "B", 10)
         self.set_text_color(*NAVY)
         title_text = f"{number}. {label}"
-        self.cell(0, 7, title_text)
+        self.cell(0, 7, self._t(title_text))
         self.ln(6)
 
         # Confidence badge
         self.set_font(self.font_name, "B", 8)
         self.set_text_color(*badge_color)
-        self.cell(0, 5, f"[{badge}]")
+        self.cell(0, 5, self._t(f"[{badge}]"))
         self.ln(5)
 
         # What / Why / Next
@@ -174,16 +204,16 @@ class DigestPDF(FPDF):
             self.set_x(left_indent)
             self.set_font(self.font_name, "B", 9)
             self.set_text_color(*DARK_GRAY)
-            self.cell(14, 5, field_label)
+            self.cell(14, 5, self._t(field_label))
             self.set_font(self.font_name, "", 9)
             self.set_text_color(0, 0, 0)
-            self.multi_cell(body_width - 14, 5, field_text)
+            self.multi_cell(body_width - 14, 5, self._t(field_text))
 
         # Sources
         self.set_x(left_indent)
         self.set_font(self.font_name, "", 8)
         self.set_text_color(*DARK_GRAY)
-        self.cell(0, 5, f"Sources: {sources}")
+        self.cell(0, 5, self._t(f"Sources: {sources}"))
         self.ln(4)
 
         self.ln(3)
@@ -195,13 +225,14 @@ class DigestPDF(FPDF):
         self.set_text_color(0, 0, 0)
         bullet_width = self.w - self.l_margin - 4 - self.r_margin
         if bold_prefix:
+            safe_prefix = self._t(bold_prefix)
             self.set_font(self.font_name, "B", 9)
-            self.cell(self.get_string_width(bold_prefix) + 2, 5, bold_prefix)
+            self.cell(self.get_string_width(safe_prefix) + 2, 5, safe_prefix)
             self.set_font(self.font_name, "", 9)
-            remaining = bullet_width - self.get_string_width(bold_prefix) - 2
-            self.multi_cell(remaining, 5, text)
+            remaining = bullet_width - self.get_string_width(safe_prefix) - 2
+            self.multi_cell(remaining, 5, self._t(text))
         else:
-            self.multi_cell(bullet_width, 5, f"- {text}")
+            self.multi_cell(bullet_width, 5, self._t(f"- {text}"))
 
 
 def render_pdf_digest(

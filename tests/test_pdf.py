@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from intel.models import CrossReference, PipelineRun, Projection, Trend
+from intel.models import CrossReference, PipelineRun, Projection, Summary, Trend
 from intel.synthesize.pdf import format_pdf_caption, render_pdf_digest
 
 
@@ -85,3 +85,22 @@ def test_caption_no_run(sample_clusters):
     caption = format_pdf_caption(sample_clusters)
     assert "INTEL DIGEST" in caption
     assert "$" not in caption
+
+
+def test_render_pdf_unicode_in_summaries(sample_clusters):
+    """PDF renders when summary text contains em dashes and smart quotes."""
+    summaries = [
+        Summary(
+            id=1,
+            cluster_id=1,
+            depth="briefing",
+            what_happened="AI breakthrough \u2014 a \u201cmajor\u201d leap forward.",
+            why_it_matters="It\u2019s the biggest shift since\u2026 ever.",
+            whats_next="Expect \u2013 at minimum \u2013 disruption.",
+            confidence="confirmed",
+            sources=["Tech News"],
+        ),
+    ]
+    pdf_bytes = render_pdf_digest(sample_clusters, summaries)
+    assert isinstance(pdf_bytes, bytes)
+    assert pdf_bytes[:5] == b"%PDF-"
