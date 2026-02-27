@@ -27,6 +27,12 @@ variable "trigger_branch" {
   default     = "main"
 }
 
+variable "create_job" {
+  description = "Create the Cloud Run Job and Scheduler (set true after first image push)"
+  type        = bool
+  default     = false
+}
+
 # ── Secrets ──────────────────────────────────────────────────────────
 
 variable "deepseek_api_key" {

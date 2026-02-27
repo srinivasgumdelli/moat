@@ -120,9 +120,17 @@ resource "google_project_iam_member" "secret_accessor" {
   member  = "serviceAccount:${google_service_account.intel_digest.email}"
 }
 
+resource "google_project_iam_member" "ar_reader" {
+  project = var.project_id
+  role    = "roles/artifactregistry.reader"
+  member  = "serviceAccount:${google_service_account.intel_digest.email}"
+}
+
 # ── Cloud Run Job ────────────────────────────────────────────────────
 
 resource "google_cloud_run_v2_job" "intel_digest" {
+  count = var.create_job ? 1 : 0
+
   name     = "intel-digest"
   location = var.region
 
@@ -198,7 +206,7 @@ resource "google_cloud_run_v2_job" "intel_digest" {
 resource "google_cloudbuild_trigger" "deploy" {
   name        = "intel-digest-deploy"
   description = "Build and deploy intel-digest on push to ${var.trigger_branch}"
-  location    = var.region
+  location    = "global"
 
   github {
     owner = "srinivasgumdelli"
@@ -248,6 +256,8 @@ resource "google_project_iam_member" "cloudbuild_sa_user" {
 # ── Cloud Scheduler ──────────────────────────────────────────────────
 
 resource "google_cloud_scheduler_job" "intel_digest" {
+  count = var.create_job ? 1 : 0
+
   name      = "intel-digest-schedule"
   schedule  = var.schedule
   time_zone = "UTC"

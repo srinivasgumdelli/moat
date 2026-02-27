@@ -1,6 +1,6 @@
 output "job_name" {
   description = "Cloud Run Job name"
-  value       = google_cloud_run_v2_job.intel_digest.name
+  value       = var.create_job ? google_cloud_run_v2_job.intel_digest[0].name : null
 }
 
 output "image_url" {
@@ -10,7 +10,7 @@ output "image_url" {
 
 output "scheduler_job" {
   description = "Cloud Scheduler job name"
-  value       = google_cloud_scheduler_job.intel_digest.name
+  value       = var.create_job ? google_cloud_scheduler_job.intel_digest[0].name : null
 }
 
 output "service_account_email" {
