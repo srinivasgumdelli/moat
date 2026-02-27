@@ -151,6 +151,63 @@ sources:
         - "financial markets major moves"
         - "central bank policy changes"
 
+  hackernews:
+    enabled: false
+    min_points: 10
+    limit: 15
+    queries:
+      tech:
+        - "artificial intelligence"
+        - "machine learning"
+        - "LLM"
+      geopolitics:
+        - "geopolitics"
+        - "international relations"
+      finance:
+        - "stock market"
+        - "federal reserve"
+      crypto:
+        - "cryptocurrency"
+        - "bitcoin"
+        - "ethereum"
+
+  lemmy:
+    enabled: false
+    instance_url: "https://lemmy.world"
+    sort: "Hot"
+    limit: 15
+    communities:
+      tech:
+        - "technology"
+        - "artificial_intelligence"
+        - "machinelearning"
+      geopolitics:
+        - "world"
+        - "geopolitics"
+      finance:
+        - "economy"
+        - "finance"
+      crypto:
+        - "cryptocurrency"
+        - "bitcoin"
+
+  bluesky:
+    enabled: false
+    limit: 15
+    queries:
+      tech:
+        - "artificial intelligence breakthrough"
+        - "open source LLM"
+      geopolitics:
+        - "geopolitical crisis"
+        - "international conflict"
+      finance:
+        - "stock market rally OR crash"
+        - "central bank policy"
+      crypto:
+        - "bitcoin ethereum crypto"
+        - "stablecoin regulation"
+
 process:
   dedup:
     enabled: true

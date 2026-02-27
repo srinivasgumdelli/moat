@@ -112,6 +112,9 @@ def format_digest(
     _source_sections = [
         ("reddit", "\U0001f534 REDDIT PULSE"),   # 🔴
         ("xcom", "\U0001f535 X.COM PULSE"),       # 🔵
+        ("hackernews", "\U0001f7e0 HACKER NEWS PULSE"),
+        ("lemmy", "\U0001f7e2 LEMMY PULSE"),
+        ("bluesky", "\U0001f4a0 BLUESKY PULSE"),
     ]
     for src_type, src_heading in _source_sections:
         src_items = []

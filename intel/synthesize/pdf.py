@@ -350,6 +350,9 @@ def render_pdf_digest(
     _source_sections = [
         ("reddit", "REDDIT PULSE", (255, 69, 0)),
         ("xcom", "X.COM PULSE", (29, 161, 242)),
+        ("hackernews", "HACKER NEWS PULSE", (255, 102, 0)),
+        ("lemmy", "LEMMY PULSE", (0, 188, 140)),
+        ("bluesky", "BLUESKY PULSE", (0, 133, 255)),
     ]
     for src_type, src_label, src_color in _source_sections:
         src_items = []

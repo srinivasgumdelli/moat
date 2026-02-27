@@ -174,6 +174,9 @@ def render_html_digest(
     _SOURCE_SECTIONS = [
         ("reddit", "REDDIT PULSE", "#FF4500"),
         ("xcom", "X.COM PULSE", "#1DA1F2"),
+        ("hackernews", "HACKER NEWS PULSE", "#FF6600"),
+        ("lemmy", "LEMMY PULSE", "#00BC8C"),
+        ("bluesky", "BLUESKY PULSE", "#0085FF"),
     ]
 
     for src_type, src_label, src_color in _SOURCE_SECTIONS:
