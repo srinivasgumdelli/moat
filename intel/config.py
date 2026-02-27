@@ -100,6 +100,7 @@ _DEFAULT_TOPIC_DISPLAY = {
     "tech": {"label": "TECH & AI", "emoji": "\U0001f4bb", "color": [0, 122, 204]},
     "geopolitics": {"label": "GEOPOLITICS", "emoji": "\U0001f30d", "color": [178, 34, 34]},
     "finance": {"label": "FINANCE", "emoji": "\U0001f4c8", "color": [0, 128, 0]},
+    "crypto": {"label": "CRYPTO", "emoji": "\u20bf", "color": [245, 166, 35]},
 }
 
 

@@ -22,5 +22,7 @@ def register_source(name: str):
 
 # Import implementations to trigger registration
 from intel.ingest.gdelt import GDELTSource  # noqa: E402, F401
+from intel.ingest.reddit import RedditSource  # noqa: E402, F401
 from intel.ingest.rss import RSSSource  # noqa: E402, F401
 from intel.ingest.serper import SerperSource  # noqa: E402, F401
+from intel.ingest.xcom import XSource  # noqa: E402, F401

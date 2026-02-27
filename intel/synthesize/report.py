@@ -108,6 +108,44 @@ def format_digest(
             lines.append("")
             counter += 1
 
+    # Source-specific sections
+    _source_sections = [
+        ("reddit", "\U0001f534 REDDIT PULSE"),   # 🔴
+        ("xcom", "\U0001f535 X.COM PULSE"),       # 🔵
+    ]
+    for src_type, src_heading in _source_sections:
+        src_items = []
+        for cluster in clusters:
+            summary = summary_map.get(cluster.id)
+            if not summary:
+                continue
+            if any(a.source_type == src_type for a in (cluster.articles or [])):
+                src_items.append((cluster, summary))
+        if not src_items:
+            continue
+
+        lines.append(f"<b>{src_heading}</b>")
+        lines.append("")
+
+        src_counter = 1
+        for cluster, summary in src_items:
+            badge = CONFIDENCE_BADGE.get(
+                summary.confidence, summary.confidence.upper(),
+            )
+            sources_str = (
+                ", ".join(summary.sources[:4])
+                if summary.sources
+                else "Multiple sources"
+            )
+
+            lines.append(f"<b>{src_counter}.</b> [{badge}] <b>{_e(cluster.label)}</b>")
+            lines.append(f"   \U0001f4cc <i>What:</i> {_e(summary.what_happened)}")
+            lines.append(f"   \u2753 <i>Why:</i> {_e(summary.why_it_matters)}")
+            lines.append(f"   \u27a1 <i>Next:</i> {_e(summary.whats_next)}")
+            lines.append(f"   <i>({_e(sources_str)})</i>")
+            lines.append("")
+            src_counter += 1
+
     # Developing stories section
     if trends:
         lines.append("\U0001f4f0 <b>DEVELOPING STORIES</b>")

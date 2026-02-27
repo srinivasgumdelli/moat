@@ -170,6 +170,60 @@ def render_html_digest(
             f'</details>'
         )
 
+    # Source-specific sections (Reddit Pulse, X.com Pulse)
+    _SOURCE_SECTIONS = [
+        ("reddit", "REDDIT PULSE", "#FF4500"),
+        ("xcom", "X.COM PULSE", "#1DA1F2"),
+    ]
+
+    for src_type, src_label, src_color in _SOURCE_SECTIONS:
+        # Find clusters that have at least one article from this source
+        src_items = []
+        for cluster in clusters:
+            summary = summary_map.get(cluster.id)
+            if not summary:
+                continue
+            if any(a.source_type == src_type for a in (cluster.articles or [])):
+                src_items.append((cluster, summary))
+        if not src_items:
+            continue
+
+        src_counter = 1
+        cards_html = []
+        for cluster, summary in src_items:
+            badge = CONFIDENCE_LABEL.get(summary.confidence, summary.confidence.upper())
+            badge_color = CONFIDENCE_COLOR.get(summary.confidence, "#505050")
+            source_links = _build_source_links(cluster, summary)
+
+            cards_html.append(
+                f'<div class="story-card">'
+                f'<div class="story-header">'
+                f'<span class="story-number">{src_counter}.</span> '
+                f'<span class="story-title">{_e(cluster.label)}</span>'
+                f'<span class="badge" style="background:{badge_color}">{_e(badge)}</span>'
+                f'</div>'
+                f'<div class="story-fields">'
+                f'<div class="field"><span class="field-label">What:</span> '
+                f'{_e(summary.what_happened)}</div>'
+                f'<div class="field"><span class="field-label">Why:</span> '
+                f'{_e(summary.why_it_matters)}</div>'
+                f'<div class="field"><span class="field-label">Next:</span> '
+                f'{_e(summary.whats_next)}</div>'
+                f'</div>'
+                f'<div class="sources">{source_links}</div>'
+                f'</div>'
+            )
+            src_counter += 1
+
+        sections_html.append(
+            f'<details class="topic-section" open>'
+            f'<summary class="topic-heading" style="border-color:{src_color}">'
+            f'<span style="color:{src_color}">{_e(src_label)}</span>'
+            f'</summary>'
+            f'{"".join(cards_html)}'
+            f'</details>'
+        )
+
     # Developing stories
     if trends:
         trend_cards = []
