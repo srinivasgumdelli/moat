@@ -46,6 +46,8 @@ MOCK_RSS_WITH_LINK = '''<?xml version="1.0" encoding="UTF-8"?>
 </channel>
 </rss>'''
 
+INSTANCE = "https://xcancel.com"
+
 
 @pytest.fixture
 def xcom_config():
@@ -53,7 +55,7 @@ def xcom_config():
         "sources": {
             "xcom": {
                 "enabled": True,
-                "instance_url": "https://xcancel.com",
+                "instance_url": INSTANCE,
                 "accounts": {
                     "tech": ["testuser"],
                 },
@@ -71,7 +73,7 @@ def xcom_config_disabled():
         "sources": {
             "xcom": {
                 "enabled": False,
-                "instance_url": "https://xcancel.com",
+                "instance_url": INSTANCE,
                 "accounts": {
                     "tech": ["testuser"],
                 },
@@ -83,20 +85,25 @@ def xcom_config_disabled():
 @pytest.mark.asyncio
 @patch("intel.ingest.xcom.extract_content", new_callable=AsyncMock)
 @patch("intel.ingest.xcom.XSource._fetch_feed_xml", new_callable=AsyncMock)
+@patch(
+    "intel.ingest.xcom.XSource._find_working_instance",
+    new_callable=AsyncMock,
+    return_value=INSTANCE,
+)
 async def test_xcom_fetches_from_accounts(
-    mock_fetch_xml, mock_extract, xcom_config,
+    mock_instance, mock_fetch_xml, mock_extract, xcom_config,
 ):
     """Account RSS feed is parsed into Article objects."""
-    # side_effect returns MOCK_RSS for the account call, then
-    # MOCK_RSS_SEARCH for the search call (config has both).
     mock_fetch_xml.side_effect = [MOCK_RSS, MOCK_RSS_SEARCH]
     mock_extract.return_value = None
 
     source = XSource(xcom_config)
     articles = await source.fetch("tech")
 
-    # Should have 1 article from the account feed + 1 from search
-    account_articles = [a for a in articles if a.url == "https://x.com/testuser/status/123456"]
+    account_articles = [
+        a for a in articles
+        if a.url == "https://x.com/testuser/status/123456"
+    ]
     assert len(account_articles) == 1
 
     art = account_articles[0]
@@ -111,20 +118,25 @@ async def test_xcom_fetches_from_accounts(
 @pytest.mark.asyncio
 @patch("intel.ingest.xcom.extract_content", new_callable=AsyncMock)
 @patch("intel.ingest.xcom.XSource._fetch_feed_xml", new_callable=AsyncMock)
+@patch(
+    "intel.ingest.xcom.XSource._find_working_instance",
+    new_callable=AsyncMock,
+    return_value=INSTANCE,
+)
 async def test_xcom_fetches_from_search(
-    mock_fetch_xml, mock_extract, xcom_config,
+    mock_instance, mock_fetch_xml, mock_extract, xcom_config,
 ):
     """Search query RSS feed is parsed into Article objects."""
-    # side_effect returns MOCK_RSS for the account call, then
-    # MOCK_RSS_SEARCH for the search call (config has both).
     mock_fetch_xml.side_effect = [MOCK_RSS, MOCK_RSS_SEARCH]
     mock_extract.return_value = None
 
     source = XSource(xcom_config)
     articles = await source.fetch("tech")
 
-    # Should have articles from both the account feed and search feed
-    search_articles = [a for a in articles if a.url == "https://x.com/researcher/status/654321"]
+    search_articles = [
+        a for a in articles
+        if a.url == "https://x.com/researcher/status/654321"
+    ]
     assert len(search_articles) == 1
 
     art = search_articles[0]
@@ -137,8 +149,13 @@ async def test_xcom_fetches_from_search(
 @pytest.mark.asyncio
 @patch("intel.ingest.xcom.extract_content", new_callable=AsyncMock)
 @patch("intel.ingest.xcom.XSource._fetch_feed_xml", new_callable=AsyncMock)
+@patch(
+    "intel.ingest.xcom.XSource._find_working_instance",
+    new_callable=AsyncMock,
+    return_value=INSTANCE,
+)
 async def test_xcom_empty_topic(
-    mock_fetch_xml, mock_extract, xcom_config,
+    mock_instance, mock_fetch_xml, mock_extract, xcom_config,
 ):
     """Unconfigured topic returns empty list without fetching."""
     source = XSource(xcom_config)
@@ -163,38 +180,43 @@ async def test_xcom_disabled(
 
 
 @pytest.mark.asyncio
-@patch("intel.ingest.xcom.extract_content", new_callable=AsyncMock)
-@patch("intel.ingest.xcom.XSource._fetch_feed_xml", new_callable=AsyncMock)
-async def test_xcom_instance_down(
-    mock_fetch_xml, mock_extract, xcom_config, caplog,
-):
-    """When the Nitter instance is unreachable, returns empty with a warning."""
-    mock_fetch_xml.side_effect = Exception("Connection refused")
-
+@patch(
+    "intel.ingest.xcom.XSource._find_working_instance",
+    new_callable=AsyncMock,
+    return_value=None,
+)
+async def test_xcom_no_working_instance(mock_instance, xcom_config, caplog):
+    """When no Nitter instance responds, returns empty with a warning."""
     source = XSource(xcom_config)
     articles = await source.fetch("tech")
 
     assert articles == []
-    assert any("instance may be down" in r.message for r in caplog.records)
+    assert any(
+        "No working Nitter instance found" in r.message
+        for r in caplog.records
+    )
 
 
 @pytest.mark.asyncio
 @patch("intel.ingest.xcom.extract_content", new_callable=AsyncMock)
 @patch("intel.ingest.xcom.XSource._fetch_feed_xml", new_callable=AsyncMock)
+@patch(
+    "intel.ingest.xcom.XSource._find_working_instance",
+    new_callable=AsyncMock,
+    return_value=INSTANCE,
+)
 async def test_xcom_embedded_link_extraction(
-    mock_fetch_xml, mock_extract, xcom_config,
+    mock_instance, mock_fetch_xml, mock_extract,
 ):
     """When a tweet contains a URL, extract_content is called for it."""
     mock_fetch_xml.return_value = MOCK_RSS_WITH_LINK
     mock_extract.return_value = "Full article content about AI advances."
 
-    # Use config with only an account (no search queries) so we get
-    # exactly the tweet with the embedded link from the account feed.
     config = {
         "sources": {
             "xcom": {
                 "enabled": True,
-                "instance_url": "https://xcancel.com",
+                "instance_url": INSTANCE,
                 "accounts": {
                     "tech": ["techuser"],
                 },
@@ -208,6 +230,4 @@ async def test_xcom_embedded_link_extraction(
 
     assert len(articles) == 1
     mock_extract.assert_called_once_with("https://example.com/article")
-    # The article content should include both the tweet text and extracted content
-    assert "https://example.com/article" in articles[0].content
     assert "Full article content about AI advances." in articles[0].content

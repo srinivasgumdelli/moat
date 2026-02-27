@@ -110,7 +110,7 @@ sources:
         - "stablecoin"
 
   xcom:
-    enabled: true
+    enabled: false
     instance_url: "https://xcancel.com"   # any nitter instance
     accounts:
       tech:
