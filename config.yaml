@@ -77,6 +77,62 @@ sources:
           name: "Financial Times"
         - url: "https://finance.yahoo.com/news/rssindex"
           name: "Yahoo Finance"
+      crypto:
+        - url: "https://cointelegraph.com/rss"
+          name: "CoinTelegraph"
+        - url: "https://www.coindesk.com/arc/outboundfeeds/rss/"
+          name: "CoinDesk"
+        - url: "https://decrypt.co/feed"
+          name: "Decrypt"
+        - url: "https://solanafloor.com/feed"
+          name: "Solana Floor"
+
+  reddit:
+    enabled: true
+    limit: 15
+    min_score: 10
+    subreddits:
+      tech:
+        - "technology"
+        - "artificial"
+        - "MachineLearning"
+      geopolitics:
+        - "geopolitics"
+        - "worldnews"
+      finance:
+        - "finance"
+        - "economics"
+        - "wallstreetbets"
+      crypto:
+        - "CryptoCurrency"
+        - "Bitcoin"
+        - "ethereum"
+        - "solana"
+        - "stablecoin"
+
+  xcom:
+    enabled: true
+    instance_url: "https://xcancel.com"   # any nitter instance
+    accounts:
+      tech:
+        - "elaborateescamotage"           # Yann LeCun
+        - "kaboruza"                       # Andrej Karpathy
+      geopolitics:
+        - "BBCWorld"
+      finance:
+        - "markets"
+      crypto:
+        - "VitalikButerin"
+        - "saboruzauto"
+    queries:
+      tech:
+        - "artificial intelligence breakthrough"
+      geopolitics:
+        - "geopolitical crisis"
+      finance:
+        - "stock market crash OR rally"
+      crypto:
+        - "bitcoin ethereum solana stablecoin crypto"
 
   gdelt:
     enabled: false
@@ -138,6 +194,7 @@ pipeline:
     - tech
     - geopolitics
     - finance
+    - crypto
   topic_display:
     tech:
       label: "TECH & AI"
@@ -151,6 +208,10 @@ pipeline:
       label: "FINANCE"
       emoji: "\U0001f4c8"           # 📈
       color: [0, 128, 0]            # green
+    crypto:
+      label: "CRYPTO"
+      emoji: "\U000020BF"           # ₿
+      color: [245, 166, 35]         # bitcoin orange
 
 database:
   path: "data/intel.db"
