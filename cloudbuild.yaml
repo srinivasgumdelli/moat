@@ -1,0 +1,32 @@
+steps:
+  # Build the Docker image
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "build"
+      - "-t"
+      - "${_IMAGE}"
+      - "."
+
+  # Push the image to Artifact Registry
+  - name: "gcr.io/cloud-builders/docker"
+    args:
+      - "push"
+      - "${_IMAGE}"
+
+  # Create or update the Cloud Run Job with the new image
+  - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
+    entrypoint: "gcloud"
+    args:
+      - "run"
+      - "jobs"
+      - "deploy"
+      - "intel-digest"
+      - "--image=${_IMAGE}"
+      - "--region=${_REGION}"
+
+substitutions:
+  _REGION: asia-south1
+  _IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/intel/intel-digest:latest"
+
+options:
+  logging: CLOUD_LOGGING_ONLY

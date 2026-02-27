@@ -1,0 +1,16 @@
+# GCP settings
+project_id = "my-gcp-project"
+region     = "us-central1"
+
+# Schedule (cron, UTC)
+schedule  = "0 4,16 * * *"
+
+# Docker image tag
+image_tag = "latest"
+
+# API keys — copy this file to terraform.tfvars and fill in values
+deepseek_api_key   = ""
+openai_api_key     = ""
+gemini_api_key     = ""
+telegram_bot_token = ""
+telegram_chat_id   = ""

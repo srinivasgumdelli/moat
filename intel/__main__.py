@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import logging.handlers
+import os
 import sys
 from pathlib import Path
 
@@ -150,7 +151,7 @@ def main() -> None:
         sys.exit(1)
 
     command = sys.argv[1]
-    config = load_config()
+    config = load_config(os.environ.get("CONFIG_PATH", "config.yaml"))
     setup_logging(config)
     handler = COMMANDS[command]
 
