@@ -127,13 +127,13 @@ class DigestPDF(FPDF):
     def header(self):
         # Navy header bar
         self.set_fill_color(*NAVY)
-        self.rect(0, 0, self.w, 22, "F")
+        self.rect(0, 0, self.w, 26, "F")
 
-        self.set_font(self.font_name, "B", 14)
+        self.set_font(self.font_name, "B", 15)
         self.set_text_color(*WHITE)
-        self.set_y(5)
+        self.set_y(7)
         self.cell(0, 12, self._t(f"INTEL DIGEST  --  {self.date_str} ({self.period})"), align="C")
-        self.ln(20)
+        self.ln(22)
 
     def footer(self):
         self.set_y(-15)
@@ -143,15 +143,18 @@ class DigestPDF(FPDF):
 
     def section_heading(self, title: str, color: tuple[int, int, int]):
         """Render a colored section heading."""
-        self.set_font(self.font_name, "B", 12)
+        self.ln(6)
+        self.set_font(self.font_name, "B", 13)
         self.set_text_color(*color)
-        self.cell(0, 10, self._t(title))
+        safe_title = self._t(title)
+        title_w = self.get_string_width(safe_title)
+        self.cell(0, 10, safe_title)
         self.ln(8)
-        # Underline
+        # Underline spans text width only
         self.set_draw_color(*color)
         self.set_line_width(0.5)
-        self.line(self.l_margin, self.get_y(), self.w - self.r_margin, self.get_y())
-        self.ln(4)
+        self.line(self.l_margin, self.get_y(), self.l_margin + title_w, self.get_y())
+        self.ln(2)
 
     def story_block(
         self,
@@ -163,29 +166,62 @@ class DigestPDF(FPDF):
         next_step: str,
         sources: str,
     ):
-        """Render a single story/cluster summary block."""
-        self.set_fill_color(*LIGHT_GRAY)
-
-        # Title line with number and confidence badge
+        """Render a single story/cluster summary block with card background."""
         badge = CONFIDENCE_LABEL.get(confidence, confidence.upper())
         badge_color = CONFIDENCE_COLOR.get(confidence, DARK_GRAY)
 
-        self.set_font(self.font_name, "B", 10)
-        self.set_text_color(*NAVY)
-        title_text = f"{number}. {label}"
-        self.cell(0, 7, self._t(title_text))
-        self.ln(6)
-
-        # Confidence badge
-        self.set_font(self.font_name, "B", 8)
-        self.set_text_color(*badge_color)
-        self.cell(0, 5, self._t(f"[{badge}]"))
-        self.ln(5)
-
-        # What / Why / Next
         left_indent = self.l_margin + 4
         body_width = self.w - left_indent - self.r_margin
+        field_label_w = 16
+        text_w = body_width - field_label_w
+        card_pad = 3
+        title_h = 7
 
+        # Measure field heights with dry_run
+        self.set_font(self.font_name, "", 9)
+        field_heights = []
+        for field_text in [what, why, next_step]:
+            lines = self.multi_cell(
+                text_w, 5, self._t(field_text), dry_run=True, output="LINES",
+            )
+            field_heights.append(max(1, len(lines)) * 5)
+
+        # Measure sources height
+        self.set_font(self.font_name, "", 8)
+        src_lines = self.multi_cell(
+            body_width, 5, self._t(f"Sources: {sources}"), dry_run=True, output="LINES",
+        )
+        sources_h = max(1, len(src_lines)) * 5
+
+        total_h = card_pad + title_h + sum(field_heights) + sources_h + card_pad
+
+        # Page break if the card won't fit
+        if self.get_y() + total_h > self.h - self.b_margin:
+            self.add_page()
+
+        # Draw card background
+        card_x = self.l_margin - 2
+        card_w = self.w - self.l_margin - self.r_margin + 4
+        start_y = self.get_y()
+        self.set_fill_color(*LIGHT_GRAY)
+        self.rect(card_x, start_y, card_w, total_h, "F")
+
+        # Top padding
+        self.ln(card_pad)
+
+        # Title + inline confidence badge
+        self.set_font(self.font_name, "B", 10)
+        self.set_text_color(*NAVY)
+        safe_title = self._t(f"{number}. {label}")
+        title_w = self.get_string_width(safe_title)
+        self.cell(title_w + 3, title_h, safe_title)
+
+        self.set_font(self.font_name, "B", 8)
+        self.set_text_color(*badge_color)
+        self.cell(0, title_h, self._t(f"[{badge}]"))
+        self.ln(title_h)
+
+        # What / Why / Next
         for field_label, field_text in [
             ("What:", what),
             ("Why:", why),
@@ -193,20 +229,21 @@ class DigestPDF(FPDF):
         ]:
             self.set_x(left_indent)
             self.set_font(self.font_name, "B", 9)
-            self.set_text_color(*DARK_GRAY)
-            self.cell(14, 5, self._t(field_label))
+            self.set_text_color(*NAVY)
+            self.cell(field_label_w, 5, self._t(field_label))
             self.set_font(self.font_name, "", 9)
             self.set_text_color(0, 0, 0)
-            self.multi_cell(body_width - 14, 5, self._t(field_text))
+            self.multi_cell(text_w, 5, self._t(field_text))
 
         # Sources
         self.set_x(left_indent)
         self.set_font(self.font_name, "", 8)
         self.set_text_color(*DARK_GRAY)
-        self.cell(0, 5, self._t(f"Sources: {sources}"))
-        self.ln(4)
+        self.multi_cell(body_width, 5, self._t(f"Sources: {sources}"))
 
-        self.ln(3)
+        # Bottom padding + inter-block spacing
+        self.ln(card_pad)
+        self.ln(2)
 
     def bullet_item(self, text: str, bold_prefix: str = ""):
         """Render a bullet point item."""
@@ -223,6 +260,31 @@ class DigestPDF(FPDF):
             self.multi_cell(remaining, 5, self._t(text))
         else:
             self.multi_cell(bullet_width, 5, self._t(f"- {text}"))
+        self.ln(2)
+
+    def sub_heading(self, title: str):
+        """Render a smaller sub-section label for grouping items."""
+        self.ln(2)
+        self.set_x(self.l_margin + 2)
+        self.set_font(self.font_name, "B", 9)
+        self.set_text_color(*NAVY)
+        self.cell(0, 6, self._t(title))
+        self.ln(5)
+
+
+# Display order and labels for cross-reference types
+_XREF_TYPE_ORDER = [
+    ("pattern", "Patterns"),
+    ("implicit_connection", "Implicit Connections"),
+    ("contradiction", "Contradictions"),
+]
+
+# Display order and labels for projection confidence levels
+_PROJ_CONFIDENCE_ORDER = [
+    ("likely", "Likely"),
+    ("possible", "Possible"),
+    ("speculative", "Speculative"),
+]
 
 
 def render_pdf_digest(
@@ -294,22 +356,47 @@ def render_pdf_digest(
                 text += f" (previously: {trend.previous_label})"
             pdf.bullet_item(text, bold_prefix=f"[{badge}] ")
 
-    # Cross-references
+    # Cross-references — grouped by type
     if cross_refs:
         pdf.section_heading("CROSS-REFERENCES", NAVY)
+        xref_by_type: dict[str, list[CrossReference]] = {}
         for xref in cross_refs:
-            type_label = xref.ref_type.upper().replace("_", " ")
-            pdf.bullet_item(xref.description, bold_prefix=f"[{type_label}] ")
+            xref_by_type.setdefault(xref.ref_type, []).append(xref)
+        for type_key, type_label in _XREF_TYPE_ORDER:
+            group = xref_by_type.pop(type_key, [])
+            if group:
+                pdf.sub_heading(type_label)
+                for xref in group:
+                    pdf.bullet_item(xref.description)
+        # Any remaining types not in the predefined order
+        for type_key, group in xref_by_type.items():
+            pdf.sub_heading(type_key.replace("_", " ").title())
+            for xref in group:
+                pdf.bullet_item(xref.description)
 
-    # Projections
+    # Projections — grouped by confidence
     if projections:
         pdf.section_heading("PROJECTIONS", NAVY)
+        proj_by_conf: dict[str, list[Projection]] = {}
         for proj in projections:
-            conf = proj.confidence.upper()
-            pdf.bullet_item(
-                proj.description,
-                bold_prefix=f"[{conf}, {proj.timeframe}] ",
-            )
+            proj_by_conf.setdefault(proj.confidence, []).append(proj)
+        for conf_key, conf_label in _PROJ_CONFIDENCE_ORDER:
+            group = proj_by_conf.pop(conf_key, [])
+            if group:
+                pdf.sub_heading(conf_label)
+                for proj in group:
+                    pdf.bullet_item(
+                        proj.description,
+                        bold_prefix=f"[{proj.timeframe}] ",
+                    )
+        # Any remaining confidence levels not in the predefined order
+        for conf_key, group in proj_by_conf.items():
+            pdf.sub_heading(conf_key.title())
+            for proj in group:
+                pdf.bullet_item(
+                    proj.description,
+                    bold_prefix=f"[{proj.timeframe}] ",
+                )
 
     # Footer stats
     total_articles = sum(c.article_count for c in clusters)
