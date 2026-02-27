@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Test Feed</title>
+    <link>https://example.com</link>
+    <description>A test RSS feed</description>
+    <item>
+      <title>AI Chip Startup Raises $500M</title>
+      <link>https://example.com/ai-chip-startup</link>
+      <description>A new AI chip startup has raised $500 million in Series B funding to develop next-generation accelerators for large language model inference.</description>
+      <pubDate>Mon, 24 Feb 2026 10:00:00 GMT</pubDate>
+    </item>
+    <item>
+      <title>Open Source LLM Matches Commercial Models</title>
+      <link>https://example.com/open-source-llm</link>
+      <description>An open-source language model has matched the performance of leading commercial models on major benchmarks, potentially disrupting the AI industry.</description>
+      <pubDate>Mon, 24 Feb 2026 08:00:00 GMT</pubDate>
+    </item>
+  </channel>
+</rss>

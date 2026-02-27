@@ -1,0 +1,72 @@
+# Local-only config: all tasks use Ollama, no API keys needed.
+# Usage:
+#   1. Start Ollama:  docker compose --profile local-llm up -d ollama
+#   2. Pull a model:  docker compose exec ollama ollama pull llama3.2:3b
+#   3. Run pipeline:  docker compose run -v ./config.local.yaml:/app/config.yaml:ro intel run
+
+llm:
+  providers:
+    ollama:
+      type: "openai_compatible"
+      base_url: "http://ollama:11434/v1"
+      api_key: "ollama"
+      default_model: "llama3.2:3b"
+      max_retries: 5
+      timeout: 300
+
+  tasks:
+    summarize: { provider: "ollama" }
+    label_clusters: { provider: "ollama" }
+    crossref: { provider: "ollama" }
+    projections: { provider: "ollama" }
+    deep_dive: { provider: "ollama" }
+
+sources:
+  rss:
+    enabled: true
+    feeds:
+      tech:
+        - url: "https://feeds.arstechnica.com/arstechnica/technology-lab"
+          name: "Ars Technica"
+        - url: "https://www.theverge.com/rss/ai-artificial-intelligence/index.xml"
+          name: "The Verge AI"
+
+  gdelt:
+    enabled: false
+  serper:
+    enabled: false
+
+process:
+  dedup:
+    enabled: true
+    hash_exact: true
+    cosine_threshold: 0.85
+  cluster:
+    enabled: true
+    distance_threshold: 0.6
+    min_cluster_size: 2
+  embeddings:
+    model: "minishlab/potion-base-8M"
+
+analyze:
+  crossref:
+    enabled: false
+  projections:
+    enabled: false
+  trends:
+    enabled: false
+
+deliver:
+  telegram:
+    enabled: true
+    bot_token: "${TELEGRAM_BOT_TOKEN}"
+    chat_id: "${TELEGRAM_CHAT_ID}"
+    max_message_length: 4096
+
+pipeline:
+  max_articles_per_topic: 10
+  max_article_age_hours: 48
+  topics: [tech]
+
+database:
+  path: "data/intel.db"
