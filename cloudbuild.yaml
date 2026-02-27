@@ -13,19 +13,19 @@ steps:
       - "push"
       - "${_IMAGE}"
 
-  # Update the Cloud Run Job with the new image
+  # Create or update the Cloud Run Job with the new image
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     entrypoint: "gcloud"
     args:
       - "run"
       - "jobs"
-      - "update"
+      - "deploy"
       - "intel-digest"
       - "--image=${_IMAGE}"
       - "--region=${_REGION}"
 
 substitutions:
-  _REGION: us-central1
+  _REGION: asia-south1
   _IMAGE: "${_REGION}-docker.pkg.dev/${PROJECT_ID}/intel/intel-digest:latest"
 
 options:
