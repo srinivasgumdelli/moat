@@ -1,5 +1,5 @@
 services:
-  - type: cron-job
+  - type: cron
     name: intel-digest
     runtime: docker
     dockerfilePath: ./Dockerfile
