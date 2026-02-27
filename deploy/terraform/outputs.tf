@@ -27,3 +27,8 @@ output "manual_run_command" {
   description = "Run the job manually"
   value       = "gcloud run jobs execute intel-digest --region=${var.region}"
 }
+
+output "cloud_build_trigger" {
+  description = "Cloud Build trigger name"
+  value       = google_cloudbuild_trigger.deploy.name
+}

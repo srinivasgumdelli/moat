@@ -21,6 +21,12 @@ variable "image_tag" {
   default     = "latest"
 }
 
+variable "trigger_branch" {
+  description = "Branch that triggers Cloud Build"
+  type        = string
+  default     = "main"
+}
+
 # ── Secrets ──────────────────────────────────────────────────────────
 
 variable "deepseek_api_key" {

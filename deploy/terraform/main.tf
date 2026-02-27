@@ -149,6 +149,46 @@ resource "google_cloud_run_v2_job" "intel_digest" {
   ]
 }
 
+# ── Cloud Build ──────────────────────────────────────────────────────
+
+resource "google_cloudbuild_trigger" "deploy" {
+  name        = "intel-digest-deploy"
+  description = "Build and deploy intel-digest on push to ${var.trigger_branch}"
+  location    = var.region
+
+  github {
+    owner = "srinivasgumdelli"
+    name  = "intel-summarizer"
+
+    push {
+      branch = "^${var.trigger_branch}$"
+    }
+  }
+
+  filename = "cloudbuild.yaml"
+
+  substitutions = {
+    _REGION = var.region
+    _IMAGE  = local.image
+  }
+
+  depends_on = [google_project_service.apis["cloudbuild.googleapis.com"]]
+}
+
+# Grant Cloud Build SA permission to update Cloud Run Jobs
+resource "google_project_iam_member" "cloudbuild_run_admin" {
+  project = var.project_id
+  role    = "roles/run.admin"
+  member  = "serviceAccount:${var.project_id}@cloudbuild.gserviceaccount.com"
+}
+
+# Grant Cloud Build SA permission to act as the job's service account
+resource "google_project_iam_member" "cloudbuild_sa_user" {
+  project = var.project_id
+  role    = "roles/iam.serviceAccountUser"
+  member  = "serviceAccount:${var.project_id}@cloudbuild.gserviceaccount.com"
+}
+
 # ── Cloud Scheduler ──────────────────────────────────────────────────
 
 resource "google_cloud_scheduler_job" "intel_digest" {
