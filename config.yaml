@@ -5,6 +5,21 @@ llm:
       api_key: "${DEEPSEEK_API_KEY}"
       base_url: "https://api.deepseek.com"
       default_model: "deepseek-chat"
+      json_mode: true
+
+    openai:
+      type: "openai_compatible"
+      api_key: "${OPENAI_API_KEY}"
+      base_url: "https://api.openai.com/v1"
+      default_model: "gpt-4o-mini"
+      json_mode: true
+
+    gemini:
+      type: "openai_compatible"
+      api_key: "${GEMINI_API_KEY}"
+      base_url: "https://generativelanguage.googleapis.com/v1beta/openai"
+      default_model: "gemini-2.5-flash-lite"
+      json_mode: true
 
     claude:
       type: "anthropic"
@@ -27,11 +42,11 @@ llm:
       timeout: 300
 
   tasks:
-    summarize: { provider: "claude_cli" }
-    label_clusters: { provider: "claude_cli" }
-    crossref: { provider: "claude_cli" }
-    projections: { provider: "claude_cli" }
-    deep_dive: { provider: "claude_cli", model: "opus" }
+    summarize: { provider: "openai" }
+    label_clusters: { provider: "openai" }
+    crossref: { provider: "deepseek" }
+    projections: { provider: "deepseek" }
+    deep_dive: { provider: "openai", model: "gpt-4.1-mini" }
 
 sources:
   rss:
@@ -114,10 +129,24 @@ deliver:
 pipeline:
   max_articles_per_topic: 30
   max_article_age_hours: 24
+  max_concurrent_summaries: 10
   topics:
     - tech
     - geopolitics
     - finance
+  topic_display:
+    tech:
+      label: "TECH & AI"
+      emoji: "\U0001f4bb"           # 💻
+      color: [0, 122, 204]          # blue
+    geopolitics:
+      label: "GEOPOLITICS"
+      emoji: "\U0001f30d"           # 🌍
+      color: [178, 34, 34]          # red
+    finance:
+      label: "FINANCE"
+      emoji: "\U0001f4c8"           # 📈
+      color: [0, 128, 0]            # green
 
 database:
   path: "data/intel.db"

@@ -43,6 +43,7 @@ def get_provider_for_task(config: dict, task: str) -> BaseLLMProvider:
             default_model=model,
             max_retries=task_cfg.get("max_retries", 3),
             timeout=task_cfg.get("timeout", 120),
+            json_mode=task_cfg.get("json_mode", False),
         )
 
     provider = _provider_instances[cache_key]

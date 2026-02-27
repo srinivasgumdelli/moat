@@ -30,6 +30,7 @@ class BaseLLMProvider(ABC):
         default_model: str,
         max_retries: int = 3,
         timeout: int = 120,
+        json_mode: bool = False,
     ):
         self.api_key = api_key
         self.base_url = base_url
@@ -37,6 +38,7 @@ class BaseLLMProvider(ABC):
         self.active_model = default_model
         self.max_retries = max_retries
         self.timeout = timeout
+        self.json_mode = json_mode
 
     @abstractmethod
     async def complete(

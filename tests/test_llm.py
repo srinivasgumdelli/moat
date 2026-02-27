@@ -18,6 +18,16 @@ def openai_provider():
     )
 
 
+@pytest.fixture
+def openai_provider_json():
+    return OpenAICompatibleProvider(
+        api_key="test-key",
+        base_url="http://localhost:9999",
+        default_model="test-model",
+        json_mode=True,
+    )
+
+
 def _mock_openai_response(content="test response", model="test-model"):
     return {
         "choices": [{"message": {"content": content}}],
@@ -77,3 +87,47 @@ async def test_openai_compat_no_system(mock_client_cls, openai_provider):
     payload = call_args.kwargs.get("json") or call_args[1].get("json")
     assert len(payload["messages"]) == 1
     assert payload["messages"][0]["role"] == "user"
+
+
+@pytest.mark.asyncio
+@patch("intel.llm.openai_compat.httpx.AsyncClient")
+async def test_json_mode_adds_response_format(mock_client_cls, openai_provider_json):
+    """JSON mode adds response_format to payload."""
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = _mock_openai_response("json output")
+    mock_resp.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.post.return_value = mock_resp
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client_cls.return_value = mock_client
+
+    with patch.object(openai_provider_json, "_track_cost"):
+        await openai_provider_json.complete("give me json")
+
+    call_args = mock_client.post.call_args
+    payload = call_args.kwargs.get("json") or call_args[1].get("json")
+    assert payload["response_format"] == {"type": "json_object"}
+
+
+@pytest.mark.asyncio
+@patch("intel.llm.openai_compat.httpx.AsyncClient")
+async def test_json_mode_absent_by_default(mock_client_cls, openai_provider):
+    """response_format is absent when json_mode is not enabled."""
+    mock_resp = MagicMock()
+    mock_resp.json.return_value = _mock_openai_response("plain output")
+    mock_resp.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.post.return_value = mock_resp
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client_cls.return_value = mock_client
+
+    with patch.object(openai_provider, "_track_cost"):
+        await openai_provider.complete("give me text")
+
+    call_args = mock_client.post.call_args
+    payload = call_args.kwargs.get("json") or call_args[1].get("json")
+    assert "response_format" not in payload

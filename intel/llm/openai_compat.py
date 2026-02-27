@@ -59,6 +59,8 @@ class OpenAICompatibleProvider(BaseLLMProvider):
             "temperature": temperature,
             "max_tokens": max_tokens,
         }
+        if self.json_mode:
+            payload["response_format"] = {"type": "json_object"}
 
         headers = {"Content-Type": "application/json"}
         if self.api_key:

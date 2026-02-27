@@ -104,3 +104,53 @@ def test_render_pdf_unicode_in_summaries(sample_clusters):
     pdf_bytes = render_pdf_digest(sample_clusters, summaries)
     assert isinstance(pdf_bytes, bytes)
     assert pdf_bytes[:5] == b"%PDF-"
+
+
+def test_render_pdf_custom_topic_config(sample_clusters, sample_summaries):
+    """PDF renders with custom topic display config."""
+    config = {
+        "pipeline": {
+            "topics": ["tech", "geopolitics"],
+            "topic_display": {
+                "tech": {
+                    "label": "TECHNOLOGY",
+                    "emoji": "\U0001f916",
+                    "color": [50, 50, 200],
+                },
+                "geopolitics": {
+                    "label": "WORLD AFFAIRS",
+                    "emoji": "\U0001f310",
+                    "color": [200, 50, 50],
+                },
+            },
+        },
+    }
+    pdf_bytes = render_pdf_digest(
+        sample_clusters, sample_summaries, config=config,
+    )
+    assert isinstance(pdf_bytes, bytes)
+    assert pdf_bytes[:5] == b"%PDF-"
+
+
+def test_caption_custom_topic_config(sample_clusters):
+    """Caption uses custom topic labels from config."""
+    config = {
+        "pipeline": {
+            "topics": ["tech", "geopolitics"],
+            "topic_display": {
+                "tech": {
+                    "label": "TECHNOLOGY",
+                    "emoji": "\U0001f916",
+                    "color": [50, 50, 200],
+                },
+                "geopolitics": {
+                    "label": "WORLD AFFAIRS",
+                    "emoji": "\U0001f310",
+                    "color": [200, 50, 50],
+                },
+            },
+        },
+    }
+    caption = format_pdf_caption(sample_clusters, config=config)
+    assert "technology" in caption
+    assert "world affairs" in caption
