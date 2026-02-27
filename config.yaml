@@ -89,6 +89,8 @@ sources:
 
   reddit:
     enabled: true
+    client_id: "${REDDIT_CLIENT_ID}"
+    client_secret: "${REDDIT_CLIENT_SECRET}"
     limit: 15
     min_score: 10
     subreddits:
