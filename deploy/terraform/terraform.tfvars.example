@@ -3,7 +3,7 @@ project_id = "my-gcp-project"
 region     = "us-central1"
 
 # Schedule (cron, UTC)
-schedule  = "0 6,18 * * *"
+schedule  = "0 4,16 * * *"
 
 # Docker image tag
 image_tag = "latest"

@@ -12,7 +12,7 @@ variable "region" {
 variable "schedule" {
   description = "Cron schedule for the digest (UTC)"
   type        = string
-  default     = "0 6,18 * * *"
+  default     = "0 4,16 * * *"
 }
 
 variable "image_tag" {
