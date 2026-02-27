@@ -14,7 +14,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=base /usr/local/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages
 COPY --from=base /usr/local/bin /usr/local/bin
 COPY intel/ intel/
-COPY config.yaml .
 
 VOLUME /app/data
 ENV PYTHONUNBUFFERED=1

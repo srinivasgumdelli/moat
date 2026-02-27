@@ -78,6 +78,21 @@ resource "google_secret_manager_secret_version" "secrets" {
   secret_data = each.value
 }
 
+resource "google_secret_manager_secret" "config" {
+  secret_id = "intel-digest-config"
+
+  replication {
+    auto {}
+  }
+
+  depends_on = [google_project_service.apis["secretmanager.googleapis.com"]]
+}
+
+resource "google_secret_manager_secret_version" "config" {
+  secret      = google_secret_manager_secret.config.id
+  secret_data = file("../../config.yaml")
+}
+
 # ── Service Account ──────────────────────────────────────────────────
 
 resource "google_service_account" "intel_digest" {
@@ -122,6 +137,11 @@ resource "google_cloud_run_v2_job" "intel_digest" {
           value = "1"
         }
 
+        env {
+          name  = "CONFIG_PATH"
+          value = "/etc/intel/config.yaml"
+        }
+
         dynamic "env" {
           for_each = local.secrets
           content {
@@ -132,6 +152,23 @@ resource "google_cloud_run_v2_job" "intel_digest" {
                 version = "latest"
               }
             }
+          }
+        }
+
+        volume_mounts {
+          name       = "config"
+          mount_path = "/etc/intel"
+        }
+      }
+
+      volumes {
+        name = "config"
+        secret {
+          secret       = google_secret_manager_secret.config.secret_id
+          default_mode = 292 # 0444
+          items {
+            path    = "config.yaml"
+            version = "latest"
           }
         }
       }
@@ -145,6 +182,7 @@ resource "google_cloud_run_v2_job" "intel_digest" {
   depends_on = [
     google_project_service.apis["run.googleapis.com"],
     google_secret_manager_secret_version.secrets,
+    google_secret_manager_secret_version.config,
     google_project_iam_member.secret_accessor,
   ]
 }
