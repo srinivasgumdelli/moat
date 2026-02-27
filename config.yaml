@@ -124,7 +124,11 @@ deliver:
     bot_token: "${TELEGRAM_BOT_TOKEN}"
     chat_id: "${TELEGRAM_CHAT_ID}"
     max_message_length: 4096
-    pdf_digest: true
+    # "mini_app" (default) — HTML digest in Telegram webview via signed GCS URL
+    # "pdf" — PDF file attachment
+    digest_format: "mini_app"
+  mini_app:
+    gcs_bucket: "${GCS_DIGEST_BUCKET}"
 
 pipeline:
   max_articles_per_topic: 30

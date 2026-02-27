@@ -28,3 +28,8 @@ output "manual_run_command" {
   value       = "gcloud run jobs execute intel-digest --region=${var.region}"
 }
 
+output "digest_bucket_name" {
+  description = "GCS bucket for HTML digest files"
+  value       = google_storage_bucket.digest_html.name
+}
+

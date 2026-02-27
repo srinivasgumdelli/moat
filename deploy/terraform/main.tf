@@ -29,6 +29,8 @@ locals {
     "cloudscheduler.googleapis.com",
     "cloudbuild.googleapis.com",
     "secretmanager.googleapis.com",
+    "storage.googleapis.com",
+    "iamcredentials.googleapis.com",
   ]
 
   secrets = {
@@ -144,6 +146,41 @@ resource "google_project_iam_member" "sa_user" {
   member  = "serviceAccount:${google_service_account.intel_digest.email}"
 }
 
+# ── GCS Bucket (private — HTML digests accessed via signed URLs) ─────
+
+resource "google_storage_bucket" "digest_html" {
+  name          = var.gcs_digest_bucket
+  location      = var.region
+  force_destroy = false
+
+  uniform_bucket_level_access = true
+
+  lifecycle_rule {
+    condition {
+      age = 30
+    }
+    action {
+      type = "Delete"
+    }
+  }
+
+  depends_on = [google_project_service.apis["storage.googleapis.com"]]
+}
+
+# SA can upload objects
+resource "google_storage_bucket_iam_member" "digest_writer" {
+  bucket = google_storage_bucket.digest_html.name
+  role   = "roles/storage.objectCreator"
+  member = "serviceAccount:${google_service_account.intel_digest.email}"
+}
+
+# SA can sign blobs (required for V4 signed URLs via IAM signBlob API)
+resource "google_project_iam_member" "sa_sign_blob" {
+  project = var.project_id
+  role    = "roles/iam.serviceAccountTokenCreator"
+  member  = "serviceAccount:${google_service_account.intel_digest.email}"
+}
+
 # ── Cloud Run Job ────────────────────────────────────────────────────
 
 resource "google_cloud_run_v2_job" "intel_digest" {
@@ -172,6 +209,11 @@ resource "google_cloud_run_v2_job" "intel_digest" {
         env {
           name  = "CONFIG_PATH"
           value = "/etc/intel/config.yaml"
+        }
+
+        env {
+          name  = "GCS_DIGEST_BUCKET"
+          value = google_storage_bucket.digest_html.name
         }
 
         dynamic "env" {

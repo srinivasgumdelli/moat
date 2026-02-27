@@ -27,6 +27,11 @@ variable "create_job" {
   default     = false
 }
 
+variable "gcs_digest_bucket" {
+  description = "GCS bucket name for HTML digest uploads (private, accessed via signed URLs)"
+  type        = string
+}
+
 # ── Secrets ──────────────────────────────────────────────────────────
 
 variable "deepseek_api_key" {

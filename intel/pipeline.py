@@ -20,11 +20,13 @@ from intel.db import (
     update_article_cluster,
 )
 from intel.deliver import CHANNELS
+from intel.deliver.gcs import upload_html
 from intel.ingest import SOURCES
 from intel.llm.batch import estimate_cost
 from intel.models import PipelineRun
 from intel.process.cluster import ClusterProcessor
 from intel.process.dedup import DedupProcessor
+from intel.synthesize.html import render_html_digest
 from intel.synthesize.pdf import format_pdf_caption, render_pdf_digest
 from intel.synthesize.report import format_digest, format_fallback_digest
 from intel.synthesize.summarizer import summarize_all_clusters
@@ -202,11 +204,14 @@ async def run_pipeline(config: dict) -> None:
             digest = format_fallback_digest(articles, run, config=config)
         logger.info("Digest formatted (%d chars)", len(digest))
 
-        # --- Generate PDF if enabled ---
+        # --- Generate digest attachment (PDF or Mini App, not both) ---
         pdf_bytes = None
         pdf_caption = None
+        html_url = None
         telegram_cfg = config.get("deliver", {}).get("telegram", {})
-        if telegram_cfg.get("pdf_digest", False) and summaries:
+        digest_format = telegram_cfg.get("digest_format", "mini_app")
+
+        if digest_format == "pdf" and summaries:
             try:
                 pdf_bytes = render_pdf_digest(
                     all_clusters, summaries, cross_refs,
@@ -217,6 +222,27 @@ async def run_pipeline(config: dict) -> None:
             except Exception:
                 logger.exception("PDF generation failed — falling back to text")
                 pdf_bytes = None
+
+        elif digest_format == "mini_app" and summaries:
+            mini_app_cfg = config.get("deliver", {}).get("mini_app", {})
+            try:
+                html_str = render_html_digest(
+                    all_clusters, summaries, cross_refs,
+                    projections, run, trends, config=config,
+                )
+                now = datetime.utcnow()
+                period = "morning" if now.hour < 12 else "evening"
+                obj_name = f"digest-{now.strftime('%Y-%m-%d')}-{period}.html"
+                gcs_bucket = mini_app_cfg.get("gcs_bucket", "")
+                html_url = await upload_html(html_str, gcs_bucket, obj_name)
+                if html_url:
+                    logger.info("HTML digest uploaded, signed URL ready")
+                else:
+                    logger.warning(
+                        "HTML upload failed — falling back to text",
+                    )
+            except Exception:
+                logger.exception("HTML digest generation/upload failed")
 
         # --- Deliver ---
         for channel_name, channel_cls in CHANNELS.items():
@@ -231,6 +257,13 @@ async def run_pipeline(config: dict) -> None:
                         pdf_caption,
                         attachment=pdf_bytes,
                         attachment_name=f"intel-digest-{date_str}.pdf",
+                    )
+                elif html_url and channel_name == "telegram":
+                    caption = format_pdf_caption(
+                        all_clusters, run, config=config,
+                    )
+                    success = await channel.send(
+                        caption, web_app_url=html_url,
                     )
                 else:
                     success = await channel.send(digest)

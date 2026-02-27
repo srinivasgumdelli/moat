@@ -17,6 +17,7 @@ class BaseDelivery(ABC):
         message: str,
         attachment: bytes | None = None,
         attachment_name: str | None = None,
+        web_app_url: str | None = None,
     ) -> bool:
         """Send a message, optionally with a file attachment. Returns True on success."""
         ...

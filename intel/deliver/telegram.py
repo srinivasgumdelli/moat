@@ -5,7 +5,7 @@ from __future__ import annotations
 import io
 import logging
 
-from telegram import Bot
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 
 from intel.deliver import register_channel
 from intel.deliver.base import BaseDelivery
@@ -34,9 +34,20 @@ class TelegramDelivery(BaseDelivery):
         message: str,
         attachment: bytes | None = None,
         attachment_name: str | None = None,
+        web_app_url: str | None = None,
     ) -> bool:
         """Send a message, optionally as a document attachment."""
         bot, chat_id = self._get_bot()
+
+        # Build Mini App inline keyboard if URL provided
+        reply_markup = None
+        if web_app_url:
+            reply_markup = InlineKeyboardMarkup([[
+                InlineKeyboardButton(
+                    text="Open Digest",
+                    web_app=WebAppInfo(url=web_app_url),
+                ),
+            ]])
 
         # Document mode: send PDF (or other file) with caption
         if attachment is not None:
@@ -47,6 +58,7 @@ class TelegramDelivery(BaseDelivery):
                     chat_id=chat_id,
                     document=doc,
                     caption=message[:1024],
+                    reply_markup=reply_markup,
                 )
                 logger.info("Sent document '%s' to Telegram", doc.name)
                 return True
@@ -60,12 +72,13 @@ class TelegramDelivery(BaseDelivery):
         )
         chunks = self._split_message(message, max_len)
         try:
-            for chunk in chunks:
+            for i, chunk in enumerate(chunks):
                 await bot.send_message(
                     chat_id=chat_id,
                     text=chunk,
                     parse_mode="HTML",
                     disable_web_page_preview=True,
+                    reply_markup=reply_markup if i == 0 else None,
                 )
             logger.info("Sent %d message(s) to Telegram", len(chunks))
             return True

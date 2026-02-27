@@ -57,6 +57,7 @@ async def test_send_calls_bot(mock_bot_cls, telegram_config):
         text="Test message",
         parse_mode="HTML",
         disable_web_page_preview=True,
+        reply_markup=None,
     )
 
 
@@ -129,6 +130,68 @@ async def test_send_document_failure_returns_false(
         "caption", attachment=b"data", attachment_name="test.pdf",
     )
     assert result is False
+
+
+@pytest.mark.asyncio
+@patch("intel.deliver.telegram.Bot")
+async def test_send_document_with_web_app_url(mock_bot_cls, telegram_config):
+    """send() with web_app_url attaches InlineKeyboardMarkup with WebAppInfo."""
+    mock_bot = AsyncMock()
+    mock_bot_cls.return_value = mock_bot
+
+    delivery = TelegramDelivery(telegram_config)
+    pdf_bytes = b"%PDF-1.4 fake content"
+    result = await delivery.send(
+        "Test caption",
+        attachment=pdf_bytes,
+        attachment_name="digest.pdf",
+        web_app_url="https://storage.googleapis.com/bucket/digest.html?sig=abc",
+    )
+
+    assert result is True
+    mock_bot.send_document.assert_called_once()
+    call_kwargs = mock_bot.send_document.call_args[1]
+    markup = call_kwargs["reply_markup"]
+    assert markup is not None
+    button = markup.inline_keyboard[0][0]
+    assert button.text == "Open Digest"
+    assert button.web_app.url == "https://storage.googleapis.com/bucket/digest.html?sig=abc"
+
+
+@pytest.mark.asyncio
+@patch("intel.deliver.telegram.Bot")
+async def test_send_text_with_web_app_url(mock_bot_cls, telegram_config):
+    """send() text mode attaches Mini App button only to first chunk."""
+    mock_bot = AsyncMock()
+    mock_bot_cls.return_value = mock_bot
+
+    delivery = TelegramDelivery(telegram_config)
+    result = await delivery.send(
+        "Short message",
+        web_app_url="https://example.com/digest.html",
+    )
+
+    assert result is True
+    mock_bot.send_message.assert_called_once()
+    call_kwargs = mock_bot.send_message.call_args[1]
+    markup = call_kwargs["reply_markup"]
+    assert markup is not None
+    assert markup.inline_keyboard[0][0].text == "Open Digest"
+
+
+@pytest.mark.asyncio
+@patch("intel.deliver.telegram.Bot")
+async def test_send_without_web_app_url(mock_bot_cls, telegram_config):
+    """send() without web_app_url sends no reply_markup."""
+    mock_bot = AsyncMock()
+    mock_bot_cls.return_value = mock_bot
+
+    delivery = TelegramDelivery(telegram_config)
+    result = await delivery.send("Test message")
+
+    assert result is True
+    call_kwargs = mock_bot.send_message.call_args[1]
+    assert call_kwargs["reply_markup"] is None
 
 
 def test_missing_config_raises():
