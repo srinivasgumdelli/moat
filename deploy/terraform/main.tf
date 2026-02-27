@@ -120,15 +120,27 @@ resource "google_project_iam_member" "secret_accessor" {
   member  = "serviceAccount:${google_service_account.intel_digest.email}"
 }
 
-resource "google_project_iam_member" "ar_reader" {
+resource "google_project_iam_member" "ar_writer" {
   project = var.project_id
-  role    = "roles/artifactregistry.reader"
+  role    = "roles/artifactregistry.writer"
   member  = "serviceAccount:${google_service_account.intel_digest.email}"
 }
 
 resource "google_project_iam_member" "log_writer" {
   project = var.project_id
   role    = "roles/logging.logWriter"
+  member  = "serviceAccount:${google_service_account.intel_digest.email}"
+}
+
+resource "google_project_iam_member" "run_admin" {
+  project = var.project_id
+  role    = "roles/run.admin"
+  member  = "serviceAccount:${google_service_account.intel_digest.email}"
+}
+
+resource "google_project_iam_member" "sa_user" {
+  project = var.project_id
+  role    = "roles/iam.serviceAccountUser"
   member  = "serviceAccount:${google_service_account.intel_digest.email}"
 }
 
