@@ -129,7 +129,16 @@ class RedditSource(BaseSource):
                 url, headers={"User-Agent": USER_AGENT},
             )
             resp.raise_for_status()
-            return resp.text
+            content_type = resp.headers.get("content-type", "")
+            body = resp.text
+            if "xml" not in content_type and not body.lstrip().startswith("<?xml"):
+                logger.warning(
+                    "Reddit returned non-RSS response for %s "
+                    "(content-type: %s, body: %.300s)",
+                    url, content_type, body,
+                )
+                return None
+            return body
 
 
 def _strip_html(text: str) -> str:
