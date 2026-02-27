@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from datetime import datetime
 from time import mktime
 
@@ -77,8 +78,9 @@ class RedditSource(BaseSource):
             if not link or not title:
                 continue
 
-            # RSS content is HTML — extract text, try linked URL
-            content = entry.get("summary", "") or title
+            # RSS content is raw HTML — strip tags for clean text
+            raw_summary = entry.get("summary", "") or title
+            content = _strip_html(raw_summary)
             # If the entry links to an external URL, extract content
             if link and "reddit.com" not in link:
                 try:
@@ -125,3 +127,13 @@ class RedditSource(BaseSource):
             )
             resp.raise_for_status()
             return resp.text
+
+
+def _strip_html(text: str) -> str:
+    """Remove HTML tags and decode common entities."""
+    clean = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
+    clean = re.sub(r"<[^>]+>", "", clean)
+    clean = clean.replace("&nbsp;", " ").replace("&amp;", "&")
+    clean = clean.replace("&lt;", "<").replace("&gt;", ">")
+    clean = clean.replace("&#39;", "'").replace("&quot;", '"')
+    return re.sub(r"\s+", " ", clean).strip()
