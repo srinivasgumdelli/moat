@@ -51,6 +51,9 @@ def estimate_cost(
         "claude-sonnet-4-5-20250514": (3.0, 15.0),
         "claude-opus-4-6": (15.0, 75.0),
         "claude-haiku-4-5-20251001": (0.80, 4.0),
+        "gpt-4o-mini": (0.15, 0.60),
+        "gpt-4.1-mini": (0.40, 1.60),
+        "gemini-2.5-flash-lite": (0.10, 0.40),
     }
     input_rate, output_rate = pricing.get(model, (1.0, 2.0))
     return (input_tokens * input_rate + output_tokens * output_rate) / 1_000_000

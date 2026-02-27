@@ -31,7 +31,7 @@ Everything is persisted in SQLite (articles, clusters, summaries, runs, costs).
 
 - Python 3.11+
 - A Telegram bot token ([create one via @BotFather](https://t.me/BotFather))
-- At least one LLM provider: Anthropic API key, DeepSeek API key, or local Ollama
+- At least one LLM provider: OpenAI API key (default), DeepSeek API key, Anthropic API key, or local Ollama
 
 ### Setup
 
@@ -76,22 +76,27 @@ All configuration lives in `config.yaml` with `${ENV_VAR}` substitution from `.e
 
 ### LLM Providers
 
-| Provider | Config key | Notes |
-|----------|-----------|-------|
-| Claude (API) | `claude` | Anthropic API, best quality |
-| Claude Code CLI | `claude_cli` | Uses `claude -p`, no API key needed if CLI is authenticated |
-| DeepSeek | `deepseek` | OpenAI-compatible, cost-effective |
-| Ollama | `ollama` | Local, free, requires `docker compose --profile local-llm` |
+| Provider | Config key | Model | Cost (per 1M tokens) | Notes |
+|----------|-----------|-------|---------------------|-------|
+| **OpenAI** | `openai` | gpt-4o-mini | $0.15 / $0.60 | Default for summarization, fast + cheap |
+| **Gemini** | `gemini` | gemini-2.5-flash-lite | $0.10 / $0.40 | Cheapest option, good for summaries |
+| **DeepSeek** | `deepseek` | deepseek-chat | $0.14 / $0.28 | Default for analytical tasks (crossref, projections) |
+| Claude (API) | `claude` | claude-sonnet-4-5 | $3.00 / $15.00 | Anthropic API, best quality |
+| Claude Code CLI | `claude_cli` | sonnet | varies | Uses `claude -p`, no API key needed if CLI is authenticated |
+| Ollama | `ollama` | llama3.2:3b | free | Local, requires `docker compose --profile local-llm` |
+
+All providers except Claude (API) and Claude Code CLI use the OpenAI chat completions format. OpenAI, Gemini, and DeepSeek have `json_mode: true` enabled, which sends `response_format: {"type": "json_object"}` to eliminate JSON parse failures.
 
 Route tasks to providers in `llm.tasks`:
 
 ```yaml
 llm:
   tasks:
-    summarize: { provider: "claude_cli" }
-    crossref: { provider: "claude_cli" }
-    projections: { provider: "claude_cli" }
-    deep_dive: { provider: "claude_cli", model: "opus" }
+    summarize:      { provider: "openai" }        # gpt-4o-mini
+    label_clusters: { provider: "openai" }        # gpt-4o-mini
+    crossref:       { provider: "deepseek" }      # deepseek-chat
+    projections:    { provider: "deepseek" }      # deepseek-chat
+    deep_dive:      { provider: "openai", model: "gpt-4.1-mini" }
 ```
 
 ### Sources
@@ -145,7 +150,7 @@ intel/
   analyze/             Cross-references, projections, trend detection
   deliver/             Telegram delivery (PDF + text)
   llm/                 Provider abstraction (Anthropic, OpenAI-compat, Claude CLI)
-tests/                 61 pytest tests
+tests/                 71 pytest tests
 config.yaml            Main configuration
 config.local.yaml      Ollama-only config for local dev
 ```

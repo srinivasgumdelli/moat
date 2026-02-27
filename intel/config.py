@@ -91,6 +91,7 @@ def get_llm_task_config(config: dict, task: str) -> dict:
         "model": model_override or provider_cfg.get("default_model", ""),
         "max_retries": provider_cfg.get("max_retries", 3),
         "timeout": provider_cfg.get("timeout", 120),
+        "json_mode": provider_cfg.get("json_mode", False),
     }
 
 

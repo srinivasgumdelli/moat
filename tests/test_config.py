@@ -60,6 +60,39 @@ def test_get_db_path(sample_config):
     assert path.endswith("test.db")
 
 
+def test_get_llm_task_config_json_mode():
+    """json_mode passes through from provider config."""
+    config = {
+        "llm": {
+            "providers": {
+                "openai": {
+                    "type": "openai_compatible",
+                    "api_key": "sk-test",
+                    "base_url": "https://api.openai.com/v1",
+                    "default_model": "gpt-4o-mini",
+                    "json_mode": True,
+                },
+                "local": {
+                    "type": "openai_compatible",
+                    "base_url": "http://localhost:11434/v1",
+                    "default_model": "llama3",
+                },
+            },
+            "tasks": {
+                "summarize": {"provider": "openai"},
+                "label_clusters": {"provider": "local"},
+            },
+        },
+    }
+    # Provider with json_mode: true
+    cfg = get_llm_task_config(config, "summarize")
+    assert cfg["json_mode"] is True
+
+    # Provider without json_mode (defaults to False)
+    cfg = get_llm_task_config(config, "label_clusters")
+    assert cfg["json_mode"] is False
+
+
 def test_get_topic_display_defaults():
     """Default topic display is returned when config has no topic_display."""
     config = {"pipeline": {"topics": ["tech", "finance"]}}

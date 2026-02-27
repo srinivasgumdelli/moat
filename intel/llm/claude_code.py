@@ -101,6 +101,7 @@ class ClaudeCodeProvider(BaseLLMProvider):
             default_model=kwargs.get("default_model", "sonnet"),
             max_retries=kwargs.get("max_retries", 2),
             timeout=kwargs.get("timeout", 120),
+            json_mode=kwargs.get("json_mode", False),
         )
         self.model_alias = kwargs.get("default_model", "sonnet")
 
