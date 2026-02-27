@@ -46,7 +46,10 @@ class RedditSource(BaseSource):
                 results = await self._fetch_subreddit(sub, topic, limit)
                 articles.extend(results)
             except Exception:
-                logger.warning("Reddit RSS fetch failed for r/%s", sub)
+                logger.warning(
+                    "Reddit RSS fetch failed for r/%s",
+                    sub, exc_info=True,
+                )
 
         logger.info(
             "Reddit fetched %d articles for topic '%s'",
