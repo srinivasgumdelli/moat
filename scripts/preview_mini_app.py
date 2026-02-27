@@ -33,17 +33,17 @@ from intel.synthesize.html import render_html_digest
 
 def build_sample_data(config: dict):
     """Build realistic sample data for preview."""
-    def _a(url, title, source, topic):
+    def _a(url, title, source, topic, source_type="rss"):
         return Article(
             url=url, title=title, content="", source_name=source,
-            source_type="rss", topic=topic,
+            source_type=source_type, topic=topic,
         )
 
     clusters = [
         Cluster(
             id=1, topic="tech",
             label="OpenAI Releases GPT-5 With Reasoning Capabilities",
-            article_count=4, run_id=1,
+            article_count=6, run_id=1,
             articles=[
                 _a("https://arstechnica.com/ai/2026/02/openai-gpt5",
                     "OpenAI GPT-5", "Ars Technica", "tech"),
@@ -53,6 +53,12 @@ def build_sample_data(config: dict):
                     "GPT-5 Reasoning", "The Verge AI", "tech"),
                 _a("https://openai.com/blog/gpt-5",
                     "Introducing GPT-5", "OpenAI Blog", "tech"),
+                _a("https://www.reddit.com/r/MachineLearning/comments/abc/gpt5",
+                    "GPT-5 is insane", "r/MachineLearning", "tech",
+                    source_type="reddit"),
+                _a("https://x.com/kaboruza/status/123456",
+                    "@kaboruza: GPT-5 reasoning is a step change",
+                    "@kaboruza", "tech", source_type="xcom"),
             ],
         ),
         Cluster(
@@ -71,7 +77,7 @@ def build_sample_data(config: dict):
         Cluster(
             id=3, topic="geopolitics",
             label="US-China Trade Talks Resume After Six-Month Pause",
-            article_count=3, run_id=1,
+            article_count=4, run_id=1,
             articles=[
                 _a("https://nytimes.com/2026/02/27/world/us-china-trade",
                     "US-China Trade Talks", "NYT World", "geopolitics"),
@@ -79,6 +85,9 @@ def build_sample_data(config: dict):
                     "Geneva Trade Talks", "Bloomberg Markets", "geopolitics"),
                 _a("https://bbc.co.uk/news/world-us-china-trade",
                     "Trade Talks Resume", "BBC World", "geopolitics"),
+                _a("https://www.reddit.com/r/geopolitics/comments/xyz/trade",
+                    "Analysis of US-China trade dynamics",
+                    "r/geopolitics", "geopolitics", source_type="reddit"),
             ],
         ),
         Cluster(
@@ -108,12 +117,18 @@ def build_sample_data(config: dict):
         Cluster(
             id=6, topic="finance",
             label="Bitcoin ETF Inflows Hit Record $2.1B Weekly",
-            article_count=2, run_id=1,
+            article_count=4, run_id=1,
             articles=[
                 _a("https://bloomberg.com/news/bitcoin-etf-inflows",
                     "Bitcoin ETF Record", "Bloomberg Markets", "finance"),
                 _a("https://finance.yahoo.com/news/bitcoin-etf-2b",
                     "Bitcoin ETF Inflows", "Yahoo Finance", "finance"),
+                _a("https://www.reddit.com/r/Bitcoin/comments/etf/record",
+                    "ETF inflows are insane this week",
+                    "r/Bitcoin", "finance", source_type="reddit"),
+                _a("https://x.com/VitalikButerin/status/789",
+                    "@VitalikButerin: Institutional adoption accelerating",
+                    "@VitalikButerin", "finance", source_type="xcom"),
             ],
         ),
     ]

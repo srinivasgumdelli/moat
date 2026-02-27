@@ -346,6 +346,41 @@ def render_pdf_digest(
             )
             counter += 1
 
+    # Source-specific sections
+    _source_sections = [
+        ("reddit", "REDDIT PULSE", (255, 69, 0)),
+        ("xcom", "X.COM PULSE", (29, 161, 242)),
+    ]
+    for src_type, src_label, src_color in _source_sections:
+        src_items = []
+        for cluster in clusters:
+            summary = summary_map.get(cluster.id)
+            if not summary:
+                continue
+            if any(a.source_type == src_type for a in (cluster.articles or [])):
+                src_items.append((cluster, summary))
+        if not src_items:
+            continue
+
+        pdf.section_heading(src_label, src_color)
+        src_counter = 1
+        for cluster, summary in src_items:
+            sources_str = (
+                ", ".join(summary.sources[:4])
+                if summary.sources
+                else "Multiple sources"
+            )
+            pdf.story_block(
+                number=src_counter,
+                label=cluster.label,
+                confidence=summary.confidence,
+                what=summary.what_happened,
+                why=summary.why_it_matters,
+                next_step=summary.whats_next,
+                sources=sources_str,
+            )
+            src_counter += 1
+
     # Developing stories
     if trends:
         pdf.section_heading("DEVELOPING STORIES", NAVY)
