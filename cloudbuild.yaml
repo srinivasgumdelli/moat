@@ -13,13 +13,13 @@ steps:
       - "push"
       - "${_IMAGE}"
 
-  # Create or update the Cloud Run Job with the new image
+  # Update the Cloud Run Job image (job is managed by Terraform)
   - name: "gcr.io/google.com/cloudsdktool/cloud-sdk"
     entrypoint: "gcloud"
     args:
       - "run"
       - "jobs"
-      - "deploy"
+      - "update"
       - "intel-digest"
       - "--image=${_IMAGE}"
       - "--region=${_REGION}"
