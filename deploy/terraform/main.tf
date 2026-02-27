@@ -202,30 +202,9 @@ resource "google_cloud_run_v2_job" "intel_digest" {
 }
 
 # ── Cloud Build ──────────────────────────────────────────────────────
-
-resource "google_cloudbuild_trigger" "deploy" {
-  name        = "intel-digest-deploy"
-  description = "Build and deploy intel-digest on push to ${var.trigger_branch}"
-  location    = "global"
-
-  github {
-    owner = "srinivasgumdelli"
-    name  = "intel-summarizer"
-
-    push {
-      branch = "^${var.trigger_branch}$"
-    }
-  }
-
-  filename = "cloudbuild.yaml"
-
-  substitutions = {
-    _REGION = var.region
-    _IMAGE  = local.image
-  }
-
-  depends_on = [google_project_service.apis["cloudbuild.googleapis.com"]]
-}
+# The Cloud Build trigger is created manually in the GCP console because
+# it requires a GitHub App connection (OAuth authorization flow).
+# See: Console > Cloud Build > Triggers > Connect Repository
 
 # Cloud Build uses the default Compute Engine SA in newer GCP projects
 locals {
