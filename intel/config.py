@@ -94,6 +94,39 @@ def get_llm_task_config(config: dict, task: str) -> dict:
     }
 
 
+# Default display settings per topic (used when config omits topic_display)
+_DEFAULT_TOPIC_DISPLAY = {
+    "tech": {"label": "TECH & AI", "emoji": "\U0001f4bb", "color": [0, 122, 204]},
+    "geopolitics": {"label": "GEOPOLITICS", "emoji": "\U0001f30d", "color": [178, 34, 34]},
+    "finance": {"label": "FINANCE", "emoji": "\U0001f4c8", "color": [0, 128, 0]},
+}
+
+
+def get_topic_display(config: dict) -> dict[str, dict]:
+    """Return topic display settings (label, emoji, color) keyed by topic name.
+
+    Falls back to sensible defaults for any missing topics or fields.
+    """
+    configured = (
+        config.get("pipeline", {}).get("topic_display", {}) or {}
+    )
+    topics = get_active_topics(config)
+    result: dict[str, dict] = {}
+    for topic in topics:
+        defaults = _DEFAULT_TOPIC_DISPLAY.get(topic, {
+            "label": topic.upper(),
+            "emoji": "\U0001f4cc",  # 📌
+            "color": [100, 100, 100],
+        })
+        entry = configured.get(topic, {}) or {}
+        result[topic] = {
+            "label": entry.get("label", defaults["label"]),
+            "emoji": entry.get("emoji", defaults["emoji"]),
+            "color": entry.get("color", defaults["color"]),
+        }
+    return result
+
+
 def get_db_path(config: dict) -> str:
     """Get database path from config."""
     return config.get("database", {}).get("path", "data/intel.db")

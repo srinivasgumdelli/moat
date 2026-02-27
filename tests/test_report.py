@@ -53,3 +53,30 @@ def test_format_digest_empty():
     digest = format_digest([], [])
     assert "INTEL DIGEST" in digest
     assert "0 articles" in digest
+
+
+def test_format_digest_custom_topic_config(sample_clusters, sample_summaries):
+    """Digest uses custom topic labels and emoji from config."""
+    config = {
+        "pipeline": {
+            "topics": ["tech", "geopolitics"],
+            "topic_display": {
+                "tech": {
+                    "label": "TECHNOLOGY",
+                    "emoji": "\U0001f916",
+                    "color": [50, 50, 200],
+                },
+                "geopolitics": {
+                    "label": "WORLD AFFAIRS",
+                    "emoji": "\U0001f310",
+                    "color": [200, 50, 50],
+                },
+            },
+        },
+    }
+    digest = format_digest(sample_clusters, sample_summaries, config=config)
+    assert "TECHNOLOGY" in digest
+    assert "WORLD AFFAIRS" in digest
+    # Default labels should NOT appear
+    assert "TECH & AI" not in digest
+    assert "GEOPOLITICS" not in digest

@@ -9,6 +9,7 @@ from datetime import datetime
 
 from fpdf import FPDF
 
+from intel.config import get_topic_display
 from intel.models import (
     Cluster,
     CrossReference,
@@ -25,17 +26,6 @@ NAVY = (20, 33, 61)
 WHITE = (255, 255, 255)
 LIGHT_GRAY = (245, 245, 245)
 DARK_GRAY = (80, 80, 80)
-SECTION_COLORS = {
-    "tech": (0, 122, 204),
-    "geopolitics": (178, 34, 34),
-    "finance": (0, 128, 0),
-}
-
-TOPIC_LABELS = {
-    "tech": "TECH & AI",
-    "geopolitics": "GEOPOLITICS",
-    "finance": "FINANCE",
-}
 
 CONFIDENCE_LABEL = {
     "confirmed": "CONFIRMED",
@@ -242,8 +232,11 @@ def render_pdf_digest(
     projections: list[Projection] | None = None,
     run: PipelineRun | None = None,
     trends: list[Trend] | None = None,
+    config: dict | None = None,
 ) -> bytes:
     """Render the intel digest as a styled PDF. Returns raw PDF bytes."""
+    topic_display = get_topic_display(config or {})
+
     now = datetime.utcnow()
     period = "Morning" if now.hour < 12 else "Evening"
     date_str = now.strftime("%b %d, %Y")
@@ -265,13 +258,13 @@ def render_pdf_digest(
 
     # Render each topic section
     counter = 1
-    for topic in ["tech", "geopolitics", "finance"]:
+    for topic, display in topic_display.items():
         items = topic_clusters.get(topic, [])
         if not items:
             continue
 
-        color = SECTION_COLORS.get(topic, DARK_GRAY)
-        label = TOPIC_LABELS.get(topic, topic.upper())
+        color = tuple(display["color"])
+        label = display["label"]
         pdf.section_heading(label, color)
 
         for cluster, summary in items:
@@ -342,8 +335,11 @@ def render_pdf_digest(
 def format_pdf_caption(
     clusters: list[Cluster],
     run: PipelineRun | None = None,
+    config: dict | None = None,
 ) -> str:
     """Short summary for Telegram caption (under 1024 chars)."""
+    topic_display = get_topic_display(config or {})
+
     now = datetime.utcnow()
     period = "Morning" if now.hour < 12 else "Evening"
     date_str = now.strftime("%b %d, %Y")
@@ -357,11 +353,10 @@ def format_pdf_caption(
         topic_counts[c.topic] = topic_counts.get(c.topic, 0) + 1
 
     topic_parts = []
-    for topic in ["tech", "geopolitics", "finance"]:
+    for topic, display in topic_display.items():
         count = topic_counts.get(topic, 0)
         if count:
-            label = TOPIC_LABELS.get(topic, topic)
-            topic_parts.append(f"{count} {label.lower()}")
+            topic_parts.append(f"{count} {display['label'].lower()}")
 
     caption = (
         f"INTEL DIGEST -- {date_str} ({period})\n"

@@ -6,6 +6,7 @@ import re
 from datetime import datetime
 from html import escape
 
+from intel.config import get_topic_display
 from intel.models import (
     Cluster,
     CrossReference,
@@ -14,12 +15,6 @@ from intel.models import (
     Summary,
     Trend,
 )
-
-TOPIC_EMOJI = {
-    "tech": "\U0001f4bb",       # laptop
-    "geopolitics": "\U0001f30d",  # globe
-    "finance": "\U0001f4c8",    # chart
-}
 
 CONFIDENCE_BADGE = {
     "confirmed": "\u2705 CONFIRMED",
@@ -56,8 +51,11 @@ def format_digest(
     projections: list[Projection] | None = None,
     run: PipelineRun | None = None,
     trends: list[Trend] | None = None,
+    config: dict | None = None,
 ) -> str:
     """Format the complete intel digest as Telegram HTML."""
+    topic_display = get_topic_display(config or {})
+
     now = datetime.utcnow()
     period = "\U0001f305 Morning" if now.hour < 12 else "\U0001f307 Evening"
     date_str = now.strftime("%b %d, %Y")
@@ -82,13 +80,13 @@ def format_digest(
 
     # Render each topic section
     counter = 1
-    for topic in ["tech", "geopolitics", "finance"]:
+    for topic, display in topic_display.items():
         items = topic_clusters.get(topic, [])
         if not items:
             continue
 
-        emoji = TOPIC_EMOJI.get(topic, "\U0001f4cc")
-        label = topic.upper().replace("TECH", "TECH & AI")
+        emoji = display["emoji"]
+        label = display["label"]
         lines.append(f"{emoji} <b>{label}</b>")
         lines.append("")
 
@@ -160,8 +158,11 @@ def format_digest(
 def format_fallback_digest(
     articles: list,
     run: PipelineRun | None = None,
+    config: dict | None = None,
 ) -> str:
     """Format a raw article list when LLM summarization fails."""
+    topic_display = get_topic_display(config or {})
+
     now = datetime.utcnow()
     period = "\U0001f305 Morning" if now.hour < 12 else "\U0001f307 Evening"
     date_str = now.strftime("%b %d, %Y")
@@ -179,13 +180,13 @@ def format_fallback_digest(
         topic_articles.setdefault(article.topic, []).append(article)
 
     counter = 1
-    for topic in ["tech", "geopolitics", "finance"]:
+    for topic, display in topic_display.items():
         items = topic_articles.get(topic, [])
         if not items:
             continue
 
-        emoji = TOPIC_EMOJI.get(topic, "\U0001f4cc")
-        label = topic.upper().replace("TECH", "TECH & AI")
+        emoji = display["emoji"]
+        label = display["label"]
         lines.append(f"{emoji} <b>{label}</b>")
         lines.append("")
 

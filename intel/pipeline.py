@@ -196,10 +196,10 @@ async def run_pipeline(config: dict) -> None:
         if summaries:
             digest = format_digest(
                 all_clusters, summaries, cross_refs,
-                projections, run, trends,
+                projections, run, trends, config=config,
             )
         else:
-            digest = format_fallback_digest(articles, run)
+            digest = format_fallback_digest(articles, run, config=config)
         logger.info("Digest formatted (%d chars)", len(digest))
 
         # --- Generate PDF if enabled ---
@@ -210,9 +210,9 @@ async def run_pipeline(config: dict) -> None:
             try:
                 pdf_bytes = render_pdf_digest(
                     all_clusters, summaries, cross_refs,
-                    projections, run, trends,
+                    projections, run, trends, config=config,
                 )
-                pdf_caption = format_pdf_caption(all_clusters, run)
+                pdf_caption = format_pdf_caption(all_clusters, run, config=config)
                 logger.info("PDF digest generated (%d bytes)", len(pdf_bytes))
             except Exception:
                 logger.exception("PDF generation failed — falling back to text")

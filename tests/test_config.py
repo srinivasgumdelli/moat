@@ -7,6 +7,7 @@ from intel.config import (
     get_active_topics,
     get_db_path,
     get_llm_task_config,
+    get_topic_display,
     load_config,
 )
 
@@ -57,3 +58,47 @@ def test_get_db_path(sample_config):
     """DB path is extracted from config."""
     path = get_db_path(sample_config)
     assert path.endswith("test.db")
+
+
+def test_get_topic_display_defaults():
+    """Default topic display is returned when config has no topic_display."""
+    config = {"pipeline": {"topics": ["tech", "finance"]}}
+    display = get_topic_display(config)
+    assert list(display.keys()) == ["tech", "finance"]
+    assert display["tech"]["label"] == "TECH & AI"
+    assert display["finance"]["emoji"] == "\U0001f4c8"
+    assert display["finance"]["color"] == [0, 128, 0]
+
+
+def test_get_topic_display_custom():
+    """Custom topic display overrides defaults."""
+    config = {
+        "pipeline": {
+            "topics": ["tech", "security"],
+            "topic_display": {
+                "tech": {"label": "TECHNOLOGY", "emoji": "\U0001f916", "color": [0, 0, 255]},
+                "security": {"label": "CYBERSECURITY", "emoji": "\U0001f512", "color": [255, 0, 0]},
+            },
+        },
+    }
+    display = get_topic_display(config)
+    assert display["tech"]["label"] == "TECHNOLOGY"
+    assert display["security"]["label"] == "CYBERSECURITY"
+    assert display["security"]["color"] == [255, 0, 0]
+
+
+def test_get_topic_display_partial_override():
+    """Partial config fills in missing fields from defaults."""
+    config = {
+        "pipeline": {
+            "topics": ["tech"],
+            "topic_display": {
+                "tech": {"label": "TECHNOLOGY"},
+            },
+        },
+    }
+    display = get_topic_display(config)
+    assert display["tech"]["label"] == "TECHNOLOGY"
+    # emoji and color should fall back to defaults
+    assert display["tech"]["emoji"] == "\U0001f4bb"
+    assert display["tech"]["color"] == [0, 122, 204]
