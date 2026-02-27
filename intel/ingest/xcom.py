@@ -1,4 +1,9 @@
-"""X.com source fetcher via xcancel.com (Nitter) RSS feeds — free, no auth."""
+"""X.com source fetcher via Nitter instance RSS feeds — free, no auth.
+
+Nitter instances are fragile (depend on pooled X accounts). This source
+tries multiple instances with automatic fallback. Disabled by default —
+enable in config when a working instance is available.
+"""
 
 from __future__ import annotations
 
@@ -18,12 +23,16 @@ from intel.retry import retry_async
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_INSTANCE = "https://xcancel.com"
+# Nitter instances to try in order (first working one wins)
+DEFAULT_INSTANCES = [
+    "https://xcancel.com",
+    "https://nitter.poast.org",
+]
 
 
 @register_source("xcom")
 class XSource(BaseSource):
-    """Fetch content from X.com via a Nitter instance RSS feeds."""
+    """Fetch content from X.com via Nitter instance RSS feeds."""
 
     @property
     def name(self) -> str:
@@ -34,16 +43,27 @@ class XSource(BaseSource):
         if not cfg.get("enabled", False):
             return []
 
-        instance = cfg.get("instance_url", DEFAULT_INSTANCE).rstrip("/")
         accounts = cfg.get("accounts", {}).get(topic, [])
         queries = cfg.get("queries", {}).get(topic, [])
 
         if not accounts and not queries:
             return []
 
+        # Build instance list: explicit config first, then defaults
+        configured = cfg.get("instance_url", "")
+        if configured:
+            instances = [configured.rstrip("/")]
+        else:
+            instances = list(DEFAULT_INSTANCES)
+
+        # Find a working instance
+        instance = await self._find_working_instance(instances)
+        if not instance:
+            logger.warning("No working Nitter instance found — skipping X.com")
+            return []
+
         articles = []
 
-        # Fetch account feeds
         for username in accounts:
             try:
                 url = f"{instance}/{username}/rss"
@@ -51,10 +71,9 @@ class XSource(BaseSource):
                 articles.extend(results)
             except Exception:
                 logger.warning(
-                    "X.com fetch failed for @%s (instance may be down)", username,
+                    "X.com fetch failed for @%s", username,
                 )
 
-        # Fetch search queries
         for query in queries:
             try:
                 url = f"{instance}/search/rss?f=tweets&q={query}"
@@ -62,14 +81,29 @@ class XSource(BaseSource):
                 articles.extend(results)
             except Exception:
                 logger.warning(
-                    "X.com search failed for '%s' (instance may be down)", query,
+                    "X.com search failed for '%s'", query,
                 )
 
         logger.info(
-            "X.com fetched %d articles for topic '%s'",
-            len(articles), topic,
+            "X.com fetched %d articles for topic '%s' via %s",
+            len(articles), topic, instance,
         )
         return articles
+
+    async def _find_working_instance(
+        self, instances: list[str],
+    ) -> str | None:
+        """Probe instances and return the first one that responds."""
+        for instance in instances:
+            try:
+                async with httpx.AsyncClient(timeout=8) as client:
+                    resp = await client.get(f"{instance}/x/rss")
+                    if resp.status_code < 500:
+                        logger.debug("Using Nitter instance: %s", instance)
+                        return instance
+            except Exception:
+                logger.debug("Instance %s unreachable", instance)
+        return None
 
     async def _fetch_rss(
         self, rss_url: str, topic: str, username: str | None = None,
@@ -94,8 +128,10 @@ class XSource(BaseSource):
             # Parse author from entry or feed
             author = username
             if not author:
-                # Try to extract from entry author or feed title
-                raw_author = entry.get("author", "") or feed.feed.get("title", "")
+                raw_author = (
+                    entry.get("author", "")
+                    or feed.feed.get("title", "")
+                )
                 author = _extract_username(raw_author)
 
             # Build title from author + first ~80 chars of text
@@ -108,9 +144,8 @@ class XSource(BaseSource):
 
             # Full content
             content = clean_text
-            # Try to extract content from embedded URLs
             urls_in_text = _extract_urls(clean_text)
-            for embedded_url in urls_in_text[:1]:  # Only first embedded link
+            for embedded_url in urls_in_text[:1]:
                 try:
                     extracted = await extract_content(embedded_url)
                     if extracted:
@@ -121,9 +156,14 @@ class XSource(BaseSource):
 
             # Parse published time
             published_at = None
-            if hasattr(entry, "published_parsed") and entry.published_parsed:
+            if (
+                hasattr(entry, "published_parsed")
+                and entry.published_parsed
+            ):
                 try:
-                    published_at = datetime.fromtimestamp(mktime(entry.published_parsed))
+                    published_at = datetime.fromtimestamp(
+                        mktime(entry.published_parsed),
+                    )
                 except (ValueError, OSError):
                     pass
 
@@ -144,7 +184,9 @@ class XSource(BaseSource):
     @staticmethod
     async def _fetch_feed_xml(url: str) -> str | None:
         """Fetch raw RSS XML from the Nitter instance."""
-        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+        async with httpx.AsyncClient(
+            timeout=15, follow_redirects=True,
+        ) as client:
             resp = await client.get(url)
             resp.raise_for_status()
             return resp.text
@@ -160,18 +202,15 @@ def _strip_html_tags(text: str) -> str:
 
 def _extract_username(raw: str) -> str:
     """Extract a username from Nitter feed author/title strings."""
-    # Patterns like "@username" or "username / @handle"
     match = re.search(r"@(\w+)", raw)
     if match:
         return match.group(1)
-    # Fallback: just return cleaned string
     return raw.strip().split("/")[0].strip()
 
 
 def _extract_urls(text: str) -> list[str]:
     """Extract HTTP(S) URLs from text, excluding x.com/twitter links."""
     urls = re.findall(r"https?://[^\s<>\"']+", text)
-    # Filter out twitter/x.com links (those are the tweet itself)
     return [
         u for u in urls
         if not re.match(r"https?://(www\.)?(twitter\.com|x\.com)/", u)
