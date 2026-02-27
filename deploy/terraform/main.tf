@@ -14,6 +14,12 @@ provider "google" {
   region  = var.region
 }
 
+# ── Data Sources ─────────────────────────────────────────────────────
+
+data "google_project" "current" {
+  project_id = var.project_id
+}
+
 # ── Locals ───────────────────────────────────────────────────────────
 
 locals {
@@ -213,18 +219,30 @@ resource "google_cloudbuild_trigger" "deploy" {
   depends_on = [google_project_service.apis["cloudbuild.googleapis.com"]]
 }
 
+# Cloud Build uses the default Compute Engine SA in newer GCP projects
+locals {
+  cloudbuild_sa = "serviceAccount:${data.google_project.current.number}-compute@developer.gserviceaccount.com"
+}
+
+# Grant Cloud Build SA permission to push images to Artifact Registry
+resource "google_project_iam_member" "cloudbuild_ar_writer" {
+  project = var.project_id
+  role    = "roles/artifactregistry.writer"
+  member  = local.cloudbuild_sa
+}
+
 # Grant Cloud Build SA permission to update Cloud Run Jobs
 resource "google_project_iam_member" "cloudbuild_run_admin" {
   project = var.project_id
   role    = "roles/run.admin"
-  member  = "serviceAccount:${var.project_id}@cloudbuild.gserviceaccount.com"
+  member  = local.cloudbuild_sa
 }
 
 # Grant Cloud Build SA permission to act as the job's service account
 resource "google_project_iam_member" "cloudbuild_sa_user" {
   project = var.project_id
   role    = "roles/iam.serviceAccountUser"
-  member  = "serviceAccount:${var.project_id}@cloudbuild.gserviceaccount.com"
+  member  = local.cloudbuild_sa
 }
 
 # ── Cloud Scheduler ──────────────────────────────────────────────────
