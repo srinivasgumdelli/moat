@@ -189,6 +189,10 @@ RUN chmod +x /usr/local/share/git-core/templates/hooks/pre-commit
 COPY agent.sh /usr/local/bin/agent
 RUN chmod +x /usr/local/bin/agent
 
+# Copy quality gate script
+COPY quality-gate.sh /usr/local/bin/quality-gate
+RUN chmod +x /usr/local/bin/quality-gate
+
 # Copy IDE hook and MCP server files
 COPY --chown=node:node auto-diagnostics.sh /home/node/.claude/hooks/
 COPY --chown=node:node ide-tools.mjs /home/node/.claude/mcp/

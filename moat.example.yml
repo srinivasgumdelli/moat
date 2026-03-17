@@ -42,6 +42,20 @@ docker: true
 #     - name: my-internal-token
 #       regex: "MYCO_[A-Za-z0-9]{32}"
 
+# Quality gates — enforce checks before git push (on by default)
+# All detected project types are checked (TypeScript, Python, Go, Terraform, Docker, K8s).
+# quality_gates:
+#   pre_push:
+#     diagnostics: true         # type-check / validate (tsc, pyright, golangci-lint, terraform validate, etc.)
+#     tests: true               # run test suite (vitest/pytest/go test)
+#     build: false              # run build step
+#     build_command: "npm run build"
+
+# Recovery — checkpoint and auto-save behavior
+# recovery:
+#   auto_commit_on_end: true       # auto-commit uncommitted changes at session end
+#   checkpoint_on_risky: true      # auto-checkpoint before destructive git ops
+
 # Extra allowed domains — added to the squid proxy whitelist
 # Use leading dot to match domain + all subdomains (e.g., .crates.io matches crates.io and *.crates.io)
 # Base domains (github, npm, anthropic, pypi, golang, etc.) are always allowed.

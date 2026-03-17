@@ -523,6 +523,18 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // audit endpoint — lets in-container scripts log events to the host audit trail
+  if (req.url === '/audit' && req.method === 'POST') {
+    const body = await readBody(req);
+    if (!body || !body.type) {
+      sendJson(res, 400, { success: false, error: 'type required' });
+      return;
+    }
+    auditEmit(body.workspace_hash || '', body.type, body.payload || {});
+    sendJson(res, 200, { success: true });
+    return;
+  }
+
   // git handler
   if (req.url === '/git' && req.method === 'POST') {
     const body = await readBody(req);

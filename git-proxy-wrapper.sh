@@ -1,6 +1,7 @@
 #!/bin/bash
 # git-proxy-wrapper.sh — routes git ops through host tool proxy
 # For paths outside /workspace and /extra, uses real git directly
+# Also: quality gate enforcement (pre-push) and auto-checkpointing (pre-risky-op)
 
 PROXY_URL="http://host.docker.internal:9876"
 PROXY_TOKEN=$(cat /etc/tool-proxy-token 2>/dev/null)
@@ -18,6 +19,55 @@ should_use_proxy() {
 if ! should_use_proxy; then
   exec "$REAL_GIT" "$@"
 fi
+
+# --- Auto-checkpoint before risky operations ---
+
+is_risky_op() {
+  case "$1" in
+    reset|clean|rebase) return 0 ;;
+    checkout)
+      shift
+      for a in "$@"; do
+        case "$a" in
+          .|--) return 0 ;;
+        esac
+      done
+      return 1 ;;
+    stash)
+      case "$2" in
+        drop|clear) return 0 ;;
+      esac
+      return 1 ;;
+    branch)
+      case "$2" in
+        -D) return 0 ;;
+      esac
+      return 1 ;;
+    *) return 1 ;;
+  esac
+}
+
+maybe_checkpoint() {
+  if ! "$REAL_GIT" diff --quiet 2>/dev/null || ! "$REAL_GIT" diff --cached --quiet 2>/dev/null; then
+    "$REAL_GIT" add -A 2>/dev/null
+    "$REAL_GIT" commit -m "[moat-checkpoint] auto-save before $*" --no-verify 2>/dev/null
+    echo "[moat] Checkpoint saved before: $*" >&2
+  fi
+}
+
+if [ "${MOAT_SKIP_CHECKPOINT:-}" != "1" ] && is_risky_op "$@"; then
+  maybe_checkpoint "$@"
+fi
+
+# --- Quality gate before push ---
+
+if [ "$1" = "push" ]; then
+  if [ -x /usr/local/bin/quality-gate ]; then
+    /usr/local/bin/quality-gate "$CWD" || exit $?
+  fi
+fi
+
+# --- Proxy the git command to host ---
 
 # Serialize arguments to JSON
 if [ $# -eq 0 ]; then
