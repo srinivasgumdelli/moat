@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Moat — sandboxed Claude Code launcher
 // Usage: moat [workspace_path] [--add-dir <path>...] [claude args...]
-// Subcommands: doctor | update [--version X.Y.Z] | down [--all] | stop | attach <dir> | detach <dir|--all> | init | audit [hash] | uninstall | allow-domain <domain...>
+// Subcommands: doctor | update [--version X.Y.Z] | down [--all] | stop | attach <dir> | detach <dir|--all> | init | audit [hash] | rewind [--list|--to <sha>] | uninstall | allow-domain <domain...>
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, lstatSync, unlinkSync } from 'node:fs';
 import { dirname, join, basename } from 'node:path';
@@ -146,6 +146,12 @@ if (subcommand === 'audit') {
   process.exit(0);
 }
 
+if (subcommand === 'rewind') {
+  const { rewind } = await import('./lib/rewind.mjs');
+  await rewind(subcommandArgs);
+  process.exit(0);
+}
+
 if (subcommand === 'init') {
   const { initConfig } = await import('./lib/init-config.mjs');
   await initConfig(workspace);
@@ -182,7 +188,11 @@ mkdirSync(wsDir, { recursive: true });
 // Create audit logger for this session
 const audit = createAuditLogger(wsDir);
 const sessionStartTime = Date.now();
-audit.emit('session.start', { workspace, hash, moat_version: moatVersion, runtime: runtimeName });
+let headSha = null;
+try {
+  headSha = execSync('git rev-parse HEAD', { cwd: workspace, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+} catch {}
+audit.emit('session.start', { workspace, hash, moat_version: moatVersion, runtime: runtimeName, head_sha: headSha });
 
 // Legacy migration: tear down old single-instance container
 if (await isContainerRunning('moat-devcontainer-1')) {
@@ -361,6 +371,30 @@ if (runtime.configDir === '.claude') {
   await refreshHooks(containerName, REPO_DIR);
 }
 
+// Write quality gate config into container
+{
+  const moatYmlPath = join(workspace, '.moat.yml');
+  let gateConfig = { diagnostics: true, tests: true, build: false, build_command: null };
+  if (existsSync(moatYmlPath)) {
+    try {
+      const { parseYaml } = await import('./lib/yaml.mjs');
+      const config = parseYaml(readFileSync(moatYmlPath, 'utf-8'));
+      if (config.quality_gates?.pre_push) {
+        const pp = config.quality_gates.pre_push;
+        if (pp.diagnostics !== undefined) gateConfig.diagnostics = pp.diagnostics;
+        if (pp.tests !== undefined) gateConfig.tests = pp.tests;
+        if (pp.build !== undefined) gateConfig.build = pp.build;
+        if (pp.build_command !== undefined) gateConfig.build_command = pp.build_command;
+      }
+    } catch {}
+  }
+  const tmpConfig = join(wsDir, 'quality-gate-config.json');
+  writeFileSync(tmpConfig, JSON.stringify(gateConfig, null, 2) + '\n');
+  try {
+    execSync(`docker cp ${JSON.stringify(tmpConfig)} ${containerName}:/home/node/.claude/quality-gate-config.json`, { stdio: 'pipe' });
+  } catch {}
+}
+
 // Forward host MCP server configs into container (Claude Code only — other runtimes don't use MCP)
 if (runtime.configDir === '.claude') {
   const proxyToken = existsSync(tokenPath) ? readFileSync(tokenPath, 'utf-8').trim() : null;
@@ -370,5 +404,34 @@ if (runtime.configDir === '.claude') {
 
 // Execute runtime (blocks until exit)
 const exitCode = await execRuntime(runtime, workspace, REPO_DIR, wsDir, claudeArgs, extraDirs, projectName);
-audit.emit('session.end', { exit_code: exitCode, duration_ms: Date.now() - sessionStartTime });
+
+// Session-end auto-commit: save uncommitted work with [moat-checkpoint] prefix
+{
+  let autoCommitEnabled = true;
+  const moatYmlPath = join(workspace, '.moat.yml');
+  if (existsSync(moatYmlPath)) {
+    try {
+      const { parseYaml } = await import('./lib/yaml.mjs');
+      const config = parseYaml(readFileSync(moatYmlPath, 'utf-8'));
+      if (config.recovery?.auto_commit_on_end === false) autoCommitEnabled = false;
+    } catch {}
+  }
+  if (autoCommitEnabled) {
+    try {
+      const status = execSync('git status --porcelain', { cwd: workspace, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+      if (status) {
+        execSync('git add -A', { cwd: workspace, stdio: ['pipe', 'pipe', 'pipe'] });
+        execSync('git commit -m "[moat-checkpoint] session end auto-save" --no-verify', { cwd: workspace, stdio: ['pipe', 'pipe', 'pipe'] });
+        process.stderr.write('[moat] Auto-saved uncommitted changes at session end\n');
+      }
+    } catch {}
+  }
+}
+
+// Record HEAD SHA at session end
+let endHeadSha = null;
+try {
+  endHeadSha = execSync('git rev-parse HEAD', { cwd: workspace, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
+} catch {}
+audit.emit('session.end', { exit_code: exitCode, duration_ms: Date.now() - sessionStartTime, head_sha: endHeadSha });
 process.exit(exitCode);
