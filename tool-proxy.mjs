@@ -203,6 +203,38 @@ function validateAws(args) {
   return { allowed: false, reason: `aws ${service} ${action} is blocked by Moat (read-only mode)` };
 }
 
+// Jira CLI: read-only allowlist (safe subcommands only)
+const JIRA_ALLOWED_SUBCOMMANDS = new Set([
+  'issue', 'sprint', 'board', 'project', 'epic',
+  'me', 'open', 'version', 'help', 'completion',
+  'init', 'serverinfo',
+]);
+
+// For compound commands like "issue list", restrict the action verb
+const JIRA_READ_ACTIONS = new Set([
+  'list', 'view', 'search',
+]);
+// Subcommands that require action-level gating (issue, sprint, epic)
+const JIRA_GATED_SUBCOMMANDS = new Set(['issue', 'sprint', 'epic']);
+
+function validateJira(args) {
+  if (args.length === 0) return { allowed: true }; // bare `jira` shows help
+  const subcmd = args[0];
+  if (subcmd.startsWith('-')) return { allowed: true }; // flags like --help, --version
+  if (!JIRA_ALLOWED_SUBCOMMANDS.has(subcmd)) {
+    return { allowed: false, reason: `jira ${subcmd} is blocked by Moat (read-only mode)` };
+  }
+  // For gated subcommands, check the action verb
+  if (JIRA_GATED_SUBCOMMANDS.has(subcmd)) {
+    const action = args[1];
+    if (!action || action.startsWith('-')) return { allowed: true }; // "jira issue" alone shows help
+    if (!JIRA_READ_ACTIONS.has(action)) {
+      return { allowed: false, reason: `jira ${subcmd} ${action} is blocked by Moat (read-only mode)` };
+    }
+  }
+  return { allowed: true };
+}
+
 // Check if a path is a known container mount point
 function isContainerPath(p, workspaceHash) {
   const mappings = getMappingsForHash(workspaceHash);
@@ -672,6 +704,42 @@ const server = http.createServer(async (req, res) => {
     process.stderr.write(`[tool-proxy] aws ${body.args.join(' ')} -> exit ${result.exitCode}\n`);
     auditEmit(wsHash, 'tool.execute', { endpoint: 'aws', args_summary: body.args.join(' '), exit_code: result.exitCode, duration_ms });
     if (secretsPostScan('aws', result, wsHash, res)) return;
+    sendJson(res, 200, result);
+    return;
+  }
+
+  // jira handler (read-only)
+  if (req.url === '/jira' && req.method === 'POST') {
+    const body = await readBody(req);
+    if (!body || !Array.isArray(body.args)) {
+      sendJson(res, 400, { success: false, error: 'Invalid request: args required' });
+      return;
+    }
+    const validation = validateJira(body.args);
+    const wsHash = body.workspace_hash || '';
+    if (!validation.allowed) {
+      process.stderr.write(`[tool-proxy] jira ${body.args.join(' ')} BLOCKED (${validation.reason})\n`);
+      auditEmit(wsHash, 'tool.blocked', { endpoint: 'jira', args_summary: body.args.join(' '), reason: validation.reason });
+      sendJson(res, 200, { success: false, blocked: true, reason: validation.reason, stdout: '', stderr: validation.reason + '\n', exitCode: 126 });
+      return;
+    }
+    const options = {};
+    const hostCwd = toHostPath(body.cwd, wsHash);
+    if (hostCwd && existsSync(hostCwd)) {
+      options.cwd = hostCwd;
+    } else if (body.cwd && !hostCwd) {
+      const msg = `No path mapping for workspace hash '${wsHash}' — session may have ended. Restart moat to fix.`;
+      process.stderr.write(`[tool-proxy] jira REJECTED: ${msg}\n`);
+      sendJson(res, 400, { success: false, error: msg });
+      return;
+    }
+    if (secretsPreScan('jira', body.args, wsHash, res)) return;
+    const startTime = Date.now();
+    const result = await executeCommand('jira', body.args, options);
+    const duration_ms = Date.now() - startTime;
+    process.stderr.write(`[tool-proxy] jira ${body.args.join(' ')} -> exit ${result.exitCode}\n`);
+    auditEmit(wsHash, 'tool.execute', { endpoint: 'jira', args_summary: body.args.join(' '), exit_code: result.exitCode, duration_ms });
+    if (secretsPostScan('jira', result, wsHash, res)) return;
     sendJson(res, 200, result);
     return;
   }
