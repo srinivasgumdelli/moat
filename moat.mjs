@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Moat — sandboxed Claude Code launcher
 // Usage: moat [workspace_path] [--add-dir <path>...] [claude args...]
-// Subcommands: doctor | update [--version X.Y.Z] | down [--all] | stop | attach <dir> | detach <dir|--all> | init | audit [hash] | rewind [--list|--to <sha>] | uninstall | allow-domain <domain...>
+// Subcommands: help | doctor | update [--version X.Y.Z] | down [--all] | stop | attach <dir> | detach <dir|--all> | init | audit [hash] | rewind [--list|--to <sha>] | uninstall | allow-domain <domain...>
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, lstatSync, unlinkSync } from 'node:fs';
 import { dirname, join, basename } from 'node:path';
@@ -76,6 +76,54 @@ function ensureTokenInRepo() {
 }
 
 // --- Route subcommands ---
+
+if (subcommand === 'help') {
+  const { BOLD, DIM, CYAN, RESET } = await import('./lib/colors.mjs');
+  const { listRuntimes } = await import('./lib/runtimes/index.mjs');
+  const runtimes = listRuntimes().join(', ');
+  console.log(`
+${BOLD}moat${RESET} — sandboxed coding agent launcher
+
+${BOLD}USAGE${RESET}
+  moat [workspace] [options] [-- claude args...]
+  moat <command> [args]
+
+${BOLD}OPTIONS${RESET}
+  --runtime <name>    Runtime to use (${runtimes}) ${DIM}[default: claude]${RESET}
+  --add-dir <path>    Mount additional directory into the container (repeatable)
+  --help, -h          Show this help message
+
+${BOLD}COMMANDS${RESET}
+  ${CYAN}init${RESET}                Auto-detect dependencies and generate .moat.yml
+  ${CYAN}doctor${RESET}              Check system prerequisites and configuration
+  ${CYAN}update${RESET}              Update moat to the latest version
+    --version X.Y.Z   Pin to a specific version
+  ${CYAN}ps${RESET}                  List running moat containers
+  ${CYAN}down${RESET}                Stop and remove containers
+    --all             Stop all moat containers
+  ${CYAN}stop${RESET}                Stop the tool proxy
+  ${CYAN}attach${RESET} <dir>        Mount an additional directory to a running container
+  ${CYAN}detach${RESET} <dir|--all>  Unmount a previously attached directory
+  ${CYAN}log${RESET} [lines]         Show tool proxy logs ${DIM}[default: 50 lines]${RESET}
+    --follow, -f      Follow log output
+  ${CYAN}audit${RESET} [hash]        View audit log for a workspace
+    --tail            Follow audit events live
+  ${CYAN}rewind${RESET}              Browse and restore workspace snapshots
+    --list            List available snapshots
+    --to <sha>        Restore to a specific snapshot
+  ${CYAN}allow-domain${RESET} <domain...>  Whitelist domains for outbound network access
+  ${CYAN}uninstall${RESET}           Remove moat and all its data
+
+${BOLD}EXAMPLES${RESET}
+  moat                          ${DIM}# Launch in current directory${RESET}
+  moat ~/projects/myapp         ${DIM}# Launch with a specific workspace${RESET}
+  moat --runtime codex           ${DIM}# Use Codex runtime${RESET}
+  moat --add-dir ~/shared-libs  ${DIM}# Mount extra directory${RESET}
+  moat doctor                   ${DIM}# Check prerequisites${RESET}
+  moat down --all               ${DIM}# Stop all containers${RESET}
+`);
+  process.exit(0);
+}
 
 if (subcommand === 'doctor') {
   await doctor(REPO_DIR, DATA_DIR);
