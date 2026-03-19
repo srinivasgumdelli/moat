@@ -88,6 +88,13 @@ RUN ARCH=$(uname -m) && \
     unzip -q awscliv2.zip && ./aws/install --bin-dir /usr/local/bin/aws-real && \
     rm -rf awscliv2.zip aws/
 
+# Jira CLI (ankitpokhrel/jira-cli)
+ARG JIRA_CLI_VERSION=1.5.2
+RUN ARCH=$(dpkg --print-architecture) && \
+    curl -sL "https://github.com/ankitpokhrel/jira-cli/releases/download/v${JIRA_CLI_VERSION}/jira_${JIRA_CLI_VERSION}_linux_${ARCH}.tar.gz" -o jira-cli.tar.gz && \
+    tar xzf jira-cli.tar.gz && mv jira_${JIRA_CLI_VERSION}_linux_${ARCH}/bin/jira /usr/local/bin/jira.real && \
+    rm -rf jira-cli.tar.gz jira_${JIRA_CLI_VERSION}_linux_${ARCH}
+
 # Beads task tracker (bd CLI)
 ARG BEADS_VERSION=0.49.6
 RUN ARCH=$(dpkg --print-architecture) && \
@@ -168,6 +175,7 @@ COPY gh-proxy-wrapper.sh /usr/local/bin/gh
 COPY terraform-proxy-wrapper.sh /usr/local/bin/terraform
 COPY kubectl-proxy-wrapper.sh /usr/local/bin/kubectl
 COPY aws-proxy-wrapper.sh /usr/local/bin/aws
+COPY jira-proxy-wrapper.sh /usr/local/bin/jira
 # docker → podman compatibility wrapper (handles "docker compose" → podman-compose)
 RUN printf '#!/bin/sh\nif [ "$1" = "compose" ]; then shift; exec podman-compose "$@"; fi\nexec podman "$@"\n' \
       > /usr/local/bin/docker && \
@@ -175,6 +183,7 @@ RUN printf '#!/bin/sh\nif [ "$1" = "compose" ]; then shift; exec podman-compose 
 RUN chmod 644 /etc/tool-proxy-token && \
     chmod +x /usr/local/bin/git /usr/local/bin/gh \
              /usr/local/bin/terraform /usr/local/bin/kubectl /usr/local/bin/aws \
+             /usr/local/bin/jira \
              /usr/local/bin/docker
 
 # Copy verification script
