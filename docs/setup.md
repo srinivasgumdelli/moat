@@ -75,7 +75,7 @@ Key properties:
 │   ├── doctor.mjs         # doctor subcommand
 │   ├── update.mjs         # update subcommand
 │   ├── down.mjs           # down subcommand
-│   ├── attach.mjs         # attach/detach subcommands
+│   ├── attach.mjs         # attach-dir/detach-dir subcommands
 │   ├── detect.mjs         # Dependency scanner
 │   ├── init-config.mjs    # Interactive .moat.yml creation
 │   └── claude-md.mjs      # Copy global CLAUDE.md into container
@@ -268,10 +268,10 @@ moat
 moat init
 
 # Attach a directory to a running session (live-sync via mutagen, or restart fallback)
-moat attach ~/Projects/shared-lib
+moat attach-dir ~/Projects/shared-lib
 
 # Detach a synced directory (or --all)
-moat detach shared-lib
+moat detach-dir shared-lib
 
 # Update (pull latest code + rebuild image)
 moat update

@@ -31,19 +31,19 @@ moat ~/Projects/myapp --resume     # resume previous session
 moat . --model sonnet              # pass model flag
 ```
 
-### `moat attach <dir>` — Live-sync a directory into a running session
+### `moat attach-dir <dir>` — Live-sync a directory into a running session
 
 ```bash
-moat attach <directory>
+moat attach-dir <directory>
 ```
 
 Attaches an additional directory to a running moat session using [Mutagen](https://mutagen.io/) two-way file sync. The directory appears at `/extra/<dirname>` inside the container.
 
-Unlike `--add-dir` (which requires a container restart), `moat attach` works while Claude is running. Files sync both ways in real-time.
+Unlike `--add-dir` (which requires a container restart), `moat attach-dir` works while Claude is running. Files sync both ways in real-time.
 
 ```bash
-moat attach ~/Projects/shared-lib     # syncs to /extra/shared-lib
-moat attach ~/data/fixtures           # syncs to /extra/fixtures
+moat attach-dir ~/Projects/shared-lib     # syncs to /extra/shared-lib
+moat attach-dir ~/data/fixtures           # syncs to /extra/fixtures
 ```
 
 After attaching, tell Claude about the new directory:
@@ -54,18 +54,18 @@ After attaching, tell Claude about the new directory:
 
 **Without mutagen**: falls back to restarting the container with the directory as a bind mount. This ends the current Claude session — you'll be prompted for confirmation. Resume with `moat --resume` afterward.
 
-### `moat detach` — Remove a live-synced directory
+### `moat detach-dir` — Remove a live-synced directory
 
 ```bash
-moat detach <dir|--all>
+moat detach-dir <dir|--all>
 ```
 
 Stops syncing a previously attached directory. Accepts a path or just the basename.
 
 ```bash
-moat detach shared-lib                # stop syncing shared-lib
-moat detach ~/Projects/shared-lib     # same thing (basename is used)
-moat detach --all                     # stop all moat sync sessions
+moat detach-dir shared-lib                # stop syncing shared-lib
+moat detach-dir ~/Projects/shared-lib     # same thing (basename is used)
+moat detach-dir --all                     # stop all moat sync sessions
 ```
 
 Sync sessions are also cleaned up automatically when the moat session exits.
@@ -126,7 +126,7 @@ Runs diagnostic checks and reports PASS/FAIL/WARN for each:
 | Docker image built | WARN if not |
 | Tool proxy on :9876 | INFO (only during sessions) |
 | `ANTHROPIC_API_KEY` set | FAIL if not |
-| `mutagen` installed | INFO (optional, for attach/detach) |
+| `mutagen` installed | INFO (optional, for attach-dir/detach-dir) |
 
 Exits with code 1 if any FAILs, 0 otherwise.
 
@@ -144,7 +144,7 @@ When you run `moat`:
 8. Claude Code launches with `--dangerously-skip-permissions`
 9. On exit (or Ctrl-C), the proxy is stopped and Mutagen sessions are terminated
 
-Containers are **reused** across sessions when the workspace and extra directories haven't changed. On exit, only the tool proxy is stopped — containers keep running for fast re-launch. Bash history and Claude config persist across sessions via Docker volumes. Any Mutagen sync sessions (from `moat attach`) are terminated on exit.
+Containers are **reused** across sessions when the workspace and extra directories haven't changed. On exit, only the tool proxy is stopped — containers keep running for fast re-launch. Bash history and Claude config persist across sessions via Docker volumes. Any Mutagen sync sessions (from `moat attach-dir`) are terminated on exit.
 
 ## What works inside the container
 

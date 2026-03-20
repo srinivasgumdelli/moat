@@ -62,7 +62,7 @@ loadAllPathMappings();
 
 // Get the path mappings for a specific workspace hash
 function getMappingsForHash(workspaceHash) {
-  // Reload mappings on every request (picks up new sessions + attach changes)
+  // Reload mappings on every request (picks up new sessions + attach-dir changes)
   loadAllPathMappings();
 
   if (workspaceHash && workspaceMappings[workspaceHash]) {
