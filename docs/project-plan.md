@@ -243,7 +243,7 @@ Lightweight version — skips Homebrew/prerequisite installs:
 | terraform | Optional (for IaC proxy) | Installed in container; host needs it for proxy |
 | kubectl | Optional (for k8s proxy) | Installed in container; host needs it for proxy |
 | aws CLI | Optional (for AWS proxy) | Installed in container; host needs it for proxy |
-| mutagen | Optional (for `moat attach` live-sync) | `brew install mutagen-io/mutagen/mutagen` |
+| mutagen | Optional (for `moat attach-dir` live-sync) | `brew install mutagen-io/mutagen/mutagen` |
 
 ---
 
@@ -463,7 +463,7 @@ lib/
   doctor.mjs     → doctor subcommand
   update.mjs     → update subcommand
   down.mjs       → down subcommand
-  attach.mjs     → attach/detach subcommands
+  attach.mjs     → attach-dir/detach-dir subcommands
   detect.mjs     → dependency scanner (new)
   init-config.mjs → interactive .moat.yml creation (new)
   claude-md.mjs  → global CLAUDE.md copier (new)

@@ -63,8 +63,8 @@ moat ~/Projects/myapp                       # target a specific directory
 moat --add-dir ~/Projects/shared-lib        # mount extra directories
 moat ~/Projects/myapp --add-dir ~/lib-a --add-dir ~/lib-b
 moat init                                   # scan deps, create .moat.yml interactively
-moat attach ~/Projects/shared-lib           # live-sync a dir into a running session
-moat detach shared-lib                      # stop syncing
+moat attach-dir ~/Projects/shared-lib       # live-sync a dir into a running session
+moat detach-dir shared-lib                  # stop syncing
 ```
 
 On first run in a workspace without `.moat.yml`, Moat scans dependency files (`package.json`, `requirements.txt`, `go.mod`, `.env.example`) and offers to create a `.moat.yml` with detected services.
@@ -97,7 +97,7 @@ See [docs/usage.md](docs/usage.md) for the full usage guide.
 | terraform | Optional | `brew install terraform` (on host, for proxy) |
 | kubectl | Optional | `brew install kubectl` (on host, for proxy) |
 | aws CLI | Optional | `brew install awscli` (on host, for proxy) |
-| mutagen | Optional | `brew install mutagen-io/mutagen/mutagen` (for `moat attach` live-sync) |
+| mutagen | Optional | `brew install mutagen-io/mutagen/mutagen` (for `moat attach-dir` live-sync) |
 
 ## Security layers
 
@@ -347,7 +347,7 @@ moat/
 │   ├── doctor.mjs                # doctor subcommand
 │   ├── update.mjs                # update subcommand
 │   ├── down.mjs                  # down subcommand
-│   ├── attach.mjs                # attach/detach subcommands
+│   ├── attach.mjs                # attach-dir/detach-dir subcommands
 │   ├── audit.mjs                 # Audit logging: createAuditLogger, readAuditLog, rotation
 │   ├── audit-view.mjs            # `moat audit` subcommand: list, view, --tail
 │   ├── secrets.mjs               # Secrets scanning: patterns, scanForSecrets, loadCustomPatterns

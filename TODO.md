@@ -11,7 +11,7 @@
 - [ ] `moat init` — scans deps, creates `.moat.yml` interactively
 - [ ] Create `~/.claude/CLAUDE.md` on host, run `moat`, verify it appears inside container
 - [ ] `moat update` — pulls latest, rebuilds image
-- [ ] `moat attach` / `moat detach` — still work with Node.js entry point
+- [ ] `moat attach-dir` / `moat detach-dir` — still work with Node.js entry point
 - [ ] Run `test.sh` — all phases pass
 
 ## Validate install/update flow
@@ -34,12 +34,12 @@
 - [ ] `lsp_hover` on a TS function → type signature returned
 - [ ] `lsp_definition` on an import → source file and line returned
 
-## Validate attach/detach
+## Validate attach-dir/detach-dir
 
-- [ ] `moat attach ~/some-dir` with mutagen installed → live-sync to `/extra/<dir>`, no restart
-- [ ] `moat attach ~/some-dir` without mutagen → confirmation prompt, restart fallback, resume hint
-- [ ] `moat detach some-dir` → terminates sync session
-- [ ] `moat detach --all` → terminates all sync sessions
+- [ ] `moat attach-dir ~/some-dir` with mutagen installed → live-sync to `/extra/<dir>`, no restart
+- [ ] `moat attach-dir ~/some-dir` without mutagen → confirmation prompt, restart fallback, resume hint
+- [ ] `moat detach-dir some-dir` → terminates sync session
+- [ ] `moat detach-dir --all` → terminates all sync sessions
 - [ ] `moat down` → cleans up mutagen sessions before tearing down containers
 - [ ] Exit (Ctrl-C / Claude exit) → cleans up mutagen sessions
 - [ ] `moat doctor` with mutagen installed → shows mutagen status and active session count

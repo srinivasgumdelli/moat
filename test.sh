@@ -871,56 +871,56 @@ else
   fail "Mount mismatch not detected"
 fi
 
-# --- Phase 8: attach/detach argument validation ---
+# --- Phase 8: attach-dir/detach-dir argument validation ---
 echo ""
-echo "--- Phase 8: attach/detach validation ---"
+echo "--- Phase 8: attach-dir/detach-dir validation ---"
 
-# attach with no args
-if "$SCRIPT_DIR/moat.mjs" attach 2>&1 | grep -q "Usage: moat attach"; then
-  pass "attach with no args shows usage error"
+# attach-dir with no args
+if "$SCRIPT_DIR/moat.mjs" attach-dir 2>&1 | grep -q "Usage: moat attach-dir"; then
+  pass "attach-dir with no args shows usage error"
 else
-  fail "attach with no args did not show usage error"
+  fail "attach-dir with no args did not show usage error"
 fi
 
-# attach with nonexistent directory
-if "$SCRIPT_DIR/moat.mjs" attach /nonexistent/path 2>&1 | grep -q "Usage: moat attach"; then
-  pass "attach with bad path shows usage error"
+# attach-dir with nonexistent directory
+if "$SCRIPT_DIR/moat.mjs" attach-dir /nonexistent/path 2>&1 | grep -q "Usage: moat attach-dir"; then
+  pass "attach-dir with bad path shows usage error"
 else
-  fail "attach with bad path did not show usage error"
+  fail "attach-dir with bad path did not show usage error"
 fi
 
-# detach with no args
-if "$SCRIPT_DIR/moat.mjs" detach 2>&1 | grep -q "Usage: moat detach"; then
-  pass "detach with no args shows usage error"
+# detach-dir with no args
+if "$SCRIPT_DIR/moat.mjs" detach-dir 2>&1 | grep -q "Usage: moat detach-dir"; then
+  pass "detach-dir with no args shows usage error"
 else
-  fail "detach with no args did not show usage error"
+  fail "detach-dir with no args did not show usage error"
 fi
 
-# attach without running moat-devcontainer-1 (test uses moat-test-devcontainer-1)
-if "$SCRIPT_DIR/moat.mjs" attach /tmp 2>&1 | grep -q "No running moat container"; then
-  pass "attach with no moat-devcontainer-1 shows container error"
+# attach-dir without running moat-devcontainer-1 (test uses moat-test-devcontainer-1)
+if "$SCRIPT_DIR/moat.mjs" attach-dir /tmp 2>&1 | grep -q "No running moat container"; then
+  pass "attach-dir with no moat-devcontainer-1 shows container error"
 else
-  fail "attach did not detect missing container"
+  fail "attach-dir did not detect missing container"
 fi
 
-# attach without mutagen falls back to restart prompt (piped stdin = no TTY, defaults to abort)
+# attach-dir without mutagen falls back to restart prompt (piped stdin = no TTY, defaults to abort)
 if ! command -v mutagen &>/dev/null; then
   # Need a real running moat-devcontainer-1 for this path — skip since test uses moat-test
   echo "  (no mutagen + no moat-devcontainer-1 — restart fallback tested via container check above)"
 
-  if "$SCRIPT_DIR/moat.mjs" detach foo 2>&1 | grep -q "mutagen is not installed"; then
-    pass "detach without mutagen shows error"
+  if "$SCRIPT_DIR/moat.mjs" detach-dir foo 2>&1 | grep -q "mutagen is not installed"; then
+    pass "detach-dir without mutagen shows error"
   else
-    fail "detach without mutagen did not show error"
+    fail "detach-dir without mutagen did not show error"
   fi
 else
   echo "  (mutagen is installed — testing live-sync path)"
 
-  # detach --all with no sessions should succeed silently
-  if "$SCRIPT_DIR/moat.mjs" detach --all 2>&1 | grep -q "terminated"; then
-    pass "detach --all succeeds with no active sessions"
+  # detach-dir --all with no sessions should succeed silently
+  if "$SCRIPT_DIR/moat.mjs" detach-dir --all 2>&1 | grep -q "terminated"; then
+    pass "detach-dir --all succeeds with no active sessions"
   else
-    fail "detach --all did not handle empty session list"
+    fail "detach-dir --all did not handle empty session list"
   fi
 fi
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // Moat — sandboxed Claude Code launcher
 // Usage: moat [workspace_path] [--add-dir <path>...] [claude args...]
-// Subcommands: help | doctor | update [--version X.Y.Z] | down [--all] | stop | attach <dir> | detach <dir|--all> | init | audit [hash] | rewind [--list|--to <sha>] | uninstall | allow-domain <domain...>
+// Subcommands: help | doctor | update [--version X.Y.Z] | down [--all] | stop | attach-dir <dir> | detach-dir <dir|--all> | init | audit [hash] | rewind [--list|--to <sha>] | uninstall | allow-domain <domain...>
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, lstatSync, unlinkSync } from 'node:fs';
 import { dirname, join, basename } from 'node:path';
@@ -102,8 +102,8 @@ ${BOLD}COMMANDS${RESET}
   ${CYAN}down${RESET}                Stop and remove containers
     --all             Stop all moat containers
   ${CYAN}stop${RESET}                Stop the tool proxy
-  ${CYAN}attach${RESET} <dir>        Mount an additional directory to a running container
-  ${CYAN}detach${RESET} <dir|--all>  Unmount a previously attached directory
+  ${CYAN}attach-dir${RESET} <dir>    Mount an additional directory to a running container
+  ${CYAN}detach-dir${RESET} <dir|--all>  Unmount a previously attached directory
   ${CYAN}log${RESET} [lines]         Show tool proxy logs ${DIM}[default: 50 lines]${RESET}
     --follow, -f      Follow log output
   ${CYAN}audit${RESET} [hash]        View audit log for a workspace
@@ -167,12 +167,12 @@ if (subcommand === 'stop') {
   process.exit(0);
 }
 
-if (subcommand === 'attach') {
+if (subcommand === 'attach-dir') {
   await attach(REPO_DIR, subcommandArgs, workspace);
   process.exit(0);
 }
 
-if (subcommand === 'detach') {
+if (subcommand === 'detach-dir') {
   await detach(subcommandArgs);
   process.exit(0);
 }
