@@ -139,6 +139,9 @@ RUN npm install -g typescript typescript-language-server @modelcontextprotocol/s
     curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | \
       sh -s -- -b /home/node/go/bin
 
+# Nudge — just-in-time rule enforcement hooks for Claude Code (attunehq/nudge)
+RUN curl -sSfL https://raw.githubusercontent.com/attunehq/nudge/main/scripts/install.sh | bash
+
 # Configure rootless Podman (overlay via fuse, cgroupfs manager)
 # Note: slirp4netns is used automatically for rootless networking;
 # network_backend (cni/netavark) controls the container network stack.
