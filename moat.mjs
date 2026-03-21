@@ -449,8 +449,8 @@ if (runtime.configDir === '.claude') {
   const proxyToken = existsSync(tokenPath) ? readFileSync(tokenPath, 'utf-8').trim() : null;
   const proxiedServerNames = new Set(Object.keys(httpMcpServers));
   await copyMcpServers(containerName, hostMcpServers, { proxyToken, proxiedServers: proxiedServerNames });
-  // Force permissionMode in settings.json so it takes effect even if the CLI flag is ignored
-  await writeContainerSettings(containerName, { permissionMode: 'bypassPermissions' });
+  // Force permissions.defaultMode in settings.json so it takes effect even if the CLI flag is ignored
+  await writeContainerSettings(containerName, { permissions: { defaultMode: 'bypassPermissions' } });
 }
 
 // Execute runtime (blocks until exit)
