@@ -1,5 +1,6 @@
-# Claude Code local config
-.claude/
+# Claude Code local config (keep commands tracked)
+.claude/settings.local.json
+.claude/settings.json
 
 # Tool proxy secret
 .proxy-token
