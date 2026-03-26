@@ -141,8 +141,10 @@ When you run `moat`:
 5. Container is checked — reused if workspace and mounts match, recreated otherwise
 6. `devcontainer up` starts squid (forward proxy) + devcontainer
 7. Base CLAUDE.md is restored and `~/.claude/CLAUDE.md` is appended (if it exists)
-8. Claude Code launches with `--dangerously-skip-permissions`
-9. On exit (or Ctrl-C), the proxy is stopped and Mutagen sessions are terminated
+8. Project memories are copied from host into the container (`~/.claude/projects/<key>/memory/`)
+9. Host `~/.claude/settings.json` is merged into container settings (moat-managed keys preserved)
+10. Claude Code launches with `--dangerously-skip-permissions`
+11. On exit (or Ctrl-C), memories are synced back to host, the proxy is stopped, and Mutagen sessions are terminated
 
 Containers are **reused** across sessions when the workspace and extra directories haven't changed. On exit, only the tool proxy is stopped — containers keep running for fast re-launch. Bash history and Claude config persist across sessions via Docker volumes. Any Mutagen sync sessions (from `moat attach-dir`) are terminated on exit.
 
@@ -570,6 +572,8 @@ The status line is powered by `/home/node/.claude/hooks/statusline.sh`, configur
 ~/.devcontainers/moat/           → <repo> (symlink, used by devcontainer)
 ~/.moat/data/.proxy-token          (persistent bearer token)
 ~/.claude/CLAUDE.md                (optional, copied into container on launch)
+~/.claude/settings.json            (optional, merged into container on launch)
+~/.claude/projects/<key>/memory/   (synced to/from container per session)
 ```
 
 The repo itself lives at `~/.moat` (curl install) or wherever you cloned it.
@@ -579,6 +583,14 @@ The repo itself lives at `~/.moat` (curl install) or wherever you cloned it.
 Moat bakes a base set of instructions into the container at `/home/node/.claude/CLAUDE.md` that enforce a plan-first workflow (explore, plan, create beads tasks, implement, verify).
 
 If `~/.claude/CLAUDE.md` exists on the host, its content is **appended** to the base rules on container start. This gives Claude Code both the enforced workflow rules and your personal global instructions (preferences, conventions, etc.) inside the sandbox. The base rules are always restored from an immutable copy before appending, so container reuse never duplicates content.
+
+### Project memory
+
+Claude Code project memories (`~/.claude/projects/<key>/memory/`) are copied into the container at session start and synced back to the host at session end. This lets Claude remember context across sandboxed sessions. On conflict, the container version wins (it's newer).
+
+### Host settings
+
+If `~/.claude/settings.json` exists on the host, it's merged into the container's settings on launch. Moat-managed keys (`statusLine`, `hooks`, `mcpServers`, `permissions`) are always preserved from the container side, so host preferences (theme, model, etc.) are applied without overwriting sandbox configuration.
 
 ## Troubleshooting
 
