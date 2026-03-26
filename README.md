@@ -355,7 +355,9 @@ moat/
 │   │   └── index.mjs             # Runtime registry: getRuntime, listRuntimes, resolveRuntimeName
 │   ├── detect.mjs                # Dependency scanner (package.json, go.mod, etc.)
 │   ├── init-config.mjs           # Interactive .moat.yml creation from detected deps
-│   └── claude-md.mjs             # Copy global CLAUDE.md into container
+│   ├── claude-md.mjs             # Copy global CLAUDE.md into container
+│   ├── memory.mjs                # Sync project memories to/from container
+│   └── settings.mjs              # Merge host settings.json into container
 ├── install.sh                    # Unified installer (curl-pipeable, auto-detects context)
 ├── tool-proxy.mjs                # Host-side proxy server with allowlists + agent management
 ├── Dockerfile                    # Container image (devcontainer)
