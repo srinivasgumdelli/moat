@@ -23,6 +23,7 @@ import { readHostMcpServers, extractMcpDomains, extractHttpMcpServers, copyMcpSe
 import { workspaceId, workspaceDataDir } from './lib/workspace-id.mjs';
 import { createAuditLogger } from './lib/audit.mjs';
 import { getRuntime, resolveRuntimeName } from './lib/runtimes/index.mjs';
+import { syncMemoryToHost } from './lib/memory.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_DIR = __dirname;
@@ -412,7 +413,7 @@ if (!containerName) {
 }
 
 // Copy instruction files into container
-await copyInstructions(containerName, REPO_DIR, runtime);
+await copyInstructions(containerName, REPO_DIR, runtime, workspace);
 
 // Refresh hook scripts from repo (volume persistence shadows Dockerfile COPY)
 if (runtime.configDir === '.claude') {
@@ -452,6 +453,11 @@ if (runtime.configDir === '.claude') {
 
 // Execute runtime (blocks until exit)
 const exitCode = await execRuntime(runtime, workspace, REPO_DIR, wsDir, claudeArgs, extraDirs, projectName);
+
+// Sync memories created in the container back to host for persistence
+if (runtime.configDir === '.claude') {
+  await syncMemoryToHost(containerName, workspace);
+}
 
 // Session-end auto-commit: save uncommitted work with [moat-checkpoint] prefix
 {
