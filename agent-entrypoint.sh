@@ -4,6 +4,7 @@ set -euo pipefail
 PROMPT="${MOAT_AGENT_PROMPT:-}"
 TOOLS="${MOAT_AGENT_TOOLS:-Read,Grep,Glob,Task,WebFetch,WebSearch}"
 RUNTIME_BINARY="${MOAT_RUNTIME_BINARY:-claude}"
+MODEL="${MOAT_AGENT_MODEL:-}"
 
 if [ -z "$PROMPT" ]; then
   echo "MOAT_AGENT_PROMPT not set" >&2
@@ -12,7 +13,11 @@ fi
 
 case "$RUNTIME_BINARY" in
   claude)
-    exec claude -p "$PROMPT" --allowedTools "$TOOLS"
+    if [ -n "$MODEL" ]; then
+      exec claude -p "$PROMPT" --allowedTools "$TOOLS" --model "$MODEL"
+    else
+      exec claude -p "$PROMPT" --allowedTools "$TOOLS"
+    fi
     ;;
   codex)
     exec codex --full-auto "$PROMPT"
