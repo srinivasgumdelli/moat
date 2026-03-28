@@ -877,6 +877,13 @@ const server = http.createServer(async (req, res) => {
       const envFile = join(tmpdir(), `moat-agent-${id}.env`);
       writeFileSync(envFile, `${apiKeyEnv}=${apiKey}\n`, { mode: 0o600 });
 
+      // Writable dispatch agents use a dedicated worktree; read-only agents use the live workspace
+      const writable = !!body.writable;
+      const mountSrc = writable && body.worktree_path ? body.worktree_path : hostWorkspace;
+      const mountSpec = writable
+        ? `type=bind,src=${mountSrc},dst=/workspace`
+        : `type=bind,src=${mountSrc},dst=/workspace,readonly`;
+
       const dockerArgs = [
         'run', '--detach',
         '--name', `moat-agent-${id}`,
@@ -897,7 +904,8 @@ const server = http.createServer(async (req, res) => {
         '--env', `MOAT_AGENT_PROMPT=${body.prompt}`,
         '--env', `MOAT_AGENT_TOOLS=${tools}`,
         '--env', `MOAT_RUNTIME_BINARY=${runtimeBinary}`,
-        '--mount', `type=bind,src=${hostWorkspace},dst=/workspace,readonly`,
+        ...(body.model ? ['--env', `MOAT_AGENT_MODEL=${body.model}`] : []),
+        '--mount', mountSpec,
         agentImageName,
       ];
 
