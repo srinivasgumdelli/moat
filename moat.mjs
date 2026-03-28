@@ -19,7 +19,7 @@ import { down } from './lib/down.mjs';
 import { attach, detach } from './lib/attach.mjs';
 import { copyInstructions } from './lib/instructions.mjs';
 import { refreshHooks } from './lib/hooks.mjs';
-import { readHostMcpServers, extractMcpDomains, extractHttpMcpServers, copyMcpServers } from './lib/mcp-servers.mjs';
+import { readHostMcpServers, extractMcpDomains, extractHttpMcpServers, copyMcpServers, writeContainerSettings, copySettingsLocal } from './lib/mcp-servers.mjs';
 import { workspaceId, workspaceDataDir } from './lib/workspace-id.mjs';
 import { createAuditLogger } from './lib/audit.mjs';
 import { getRuntime, resolveRuntimeName } from './lib/runtimes/index.mjs';
@@ -449,6 +449,10 @@ if (runtime.configDir === '.claude') {
   const proxyToken = existsSync(tokenPath) ? readFileSync(tokenPath, 'utf-8').trim() : null;
   const proxiedServerNames = new Set(Object.keys(httpMcpServers));
   await copyMcpServers(containerName, hostMcpServers, { proxyToken, proxiedServers: proxiedServerNames });
+  // Copy host settings.local.json (carries nudge hooks and other local overrides)
+  await copySettingsLocal(containerName);
+  // Force permissions.defaultMode in settings.json so it takes effect even if the CLI flag is ignored
+  await writeContainerSettings(containerName, { permissions: { defaultMode: 'bypassPermissions' } });
 }
 
 // Execute runtime (blocks until exit)
