@@ -297,6 +297,7 @@ process.env.MOAT_WORKSPACE = workspace;
 const hash = workspaceId(workspace);
 const wsDir = workspaceDataDir(hash);
 mkdirSync(wsDir, { recursive: true });
+const configVolume = `moat-config-${hash}`;
 
 // Create audit logger for this session
 const audit = createAuditLogger(wsDir);
@@ -358,9 +359,19 @@ if (meta.has_docker) {
   log('Docker access enabled via Podman (rootless)');
 }
 
+// Generate per-workspace volume override (config volume scoped per workspace)
+const volumesOverride = [
+  'volumes:',
+  '  moat-config:',
+  `    name: ${configVolume}`,
+  '    external: true',
+].join('\n') + '\n';
+writeFileSync(join(wsDir, 'docker-compose.volumes.yml'), volumesOverride);
+
 // Generate per-workspace devcontainer.json
 const composeFiles = [
   `${REPO_DIR}/docker-compose.yml`,
+  `${wsDir}/docker-compose.volumes.yml`,
   `${wsDir}/docker-compose.services.yml`,
   `${wsDir}/docker-compose.extra-dirs.yml`,
 ];
@@ -447,7 +458,8 @@ if (!proxyOk) {
 }
 
 // Pre-create shared volumes (external: true requires they exist before compose up)
-for (const vol of ['moat-bashhistory', 'moat-config']) {
+// Config volume is per-workspace so --continue/--resume scopes to the correct session
+for (const vol of ['moat-bashhistory', configVolume]) {
   try { execSync(`docker volume inspect ${vol}`, { stdio: 'pipe' }); }
   catch { execSync(`docker volume create ${vol}`, { stdio: 'pipe' }); }
 }
