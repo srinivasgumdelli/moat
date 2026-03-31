@@ -470,10 +470,10 @@ const projectName = `moat-${hash}`;
 // Start or reuse container
 const existing = await findContainer(workspace);
 if (existing) {
-  if (await mountsMatch(extraDirs, existing)) {
+  if (await mountsMatch(extraDirs, existing, configVolume)) {
     log('Reusing running container');
   } else {
-    log('Extra directories changed — recreating container...');
+    log('Container config changed — recreating container...');
     await teardown(workspace);
     await startContainer(workspace, REPO_DIR, wsDir, projectName);
   }
