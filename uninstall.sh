@@ -101,11 +101,16 @@ lsof -ti :9876 2>/dev/null | xargs kill 2>/dev/null || true
 section "Docker volumes"
 
 existing_volumes=()
-for vol in moat_moat-bashhistory moat_moat-config; do
+# Check legacy shared volumes and bash history
+for vol in moat_moat-bashhistory moat_moat-config moat-bashhistory moat-config; do
   if docker volume inspect "$vol" &>/dev/null 2>&1; then
     existing_volumes+=("$vol")
   fi
 done
+# Find per-workspace config volumes (moat-config-<hash>)
+while IFS= read -r vol; do
+  [ -n "$vol" ] && existing_volumes+=("$vol")
+done < <(docker volume ls --format '{{.Name}}' 2>/dev/null | grep '^moat-config-')
 
 if [ ${#existing_volumes[@]} -gt 0 ]; then
   warn_msg "Found: ${existing_volumes[*]}"
