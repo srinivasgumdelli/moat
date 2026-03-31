@@ -906,6 +906,9 @@ const server = http.createServer(async (req, res) => {
         '--env', `MOAT_RUNTIME_BINARY=${runtimeBinary}`,
         ...(body.model ? ['--env', `MOAT_AGENT_MODEL=${body.model}`] : []),
         '--mount', mountSpec,
+        // Give each agent a writable in-memory .claude dir so Claude Code can
+        // create worktrees and session data without hitting a missing/read-only dir.
+        '--tmpfs', '/home/node/.claude:rw,size=100m,uid=1000,gid=1000',
         agentImageName,
       ];
 

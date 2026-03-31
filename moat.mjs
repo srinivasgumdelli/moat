@@ -96,8 +96,8 @@ ${BOLD}OPTIONS${RESET}
   --help, -h          Show this help message
 
 ${BOLD}COMMANDS${RESET}
-  ${CYAN}dispatch${RESET} [workspace] "task"  Run a task autonomously with Claude Code
-    --headless        Skip the Claude reasoning layer; send prompt directly to agent
+  ${CYAN}dispatch${RESET} [workspace] ["task"]  Run a task autonomously (interactive if no task given)
+    --headless        Skip the Claude reasoning layer; send prompt directly to agent (task required)
     --model <name>    Model override (e.g. claude-haiku-4-5-20251001)
     --runtime <name>  Runtime to use ${DIM}[default: claude]${RESET}
   ${CYAN}init${RESET}                Auto-detect dependencies and generate .moat.yml
@@ -215,7 +215,7 @@ if (subcommand === 'init') {
 }
 
 if (subcommand === 'dispatch') {
-  // Parse: dispatch [workspace] <task> [--headless] [--model <name>] [--runtime <name>]
+  // Parse: dispatch [workspace] ["task"] [--headless] [--model <name>] [--runtime <name>]
   const dispatchRawArgs = subcommandArgs;
   let dispatchWorkspace = process.cwd();
   let dispatchTask = null;
@@ -248,8 +248,8 @@ if (subcommand === 'dispatch') {
     }
   }
 
-  if (!dispatchTask) {
-    err('dispatch requires a task prompt\nUsage: moat dispatch [workspace] "task" [--headless] [--model <name>]');
+  if (!dispatchTask && dispatchHeadless) {
+    err('dispatch --headless requires a task prompt\nUsage: moat dispatch [workspace] "task" --headless [--model <name>]');
     process.exit(1);
   }
 
@@ -261,9 +261,12 @@ if (subcommand === 'dispatch') {
   if (dispatchHeadless) {
     // Mode 3: headless agent — main flow sets up container, then we spawn directly
     dispatchOpts = { headless: true, task: dispatchTask, model: dispatchModel };
-  } else {
+  } else if (dispatchTask) {
     // Mode 2: Claude Code as intelligence layer, runs non-interactively with -p
     claudeArgs = ['-p', dispatchTask, ...(dispatchModel ? ['--model', dispatchModel] : [])];
+    dispatchOpts = { headless: false };
+  } else {
+    // Mode 1: interactive — no task given, launch Claude interactively in the workspace
     dispatchOpts = { headless: false };
   }
 }
