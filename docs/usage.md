@@ -93,6 +93,105 @@ moat init ~/Projects/myapp        # scan specific directory
 
 This also runs automatically on first `moat` launch when no `.moat.yml` exists.
 
+### `moat dispatch` — Run a task autonomously {#dispatch-mode}
+
+```bash
+moat dispatch [workspace] "task" [--headless] [--model <name>] [--runtime <name>]
+```
+
+Hands off a task to a sandboxed agent without keeping an interactive session open. All Moat security applies — squid proxy, tool-proxy allowlists, secrets scanning, resource limits.
+
+**Credentials**: Uses `ANTHROPIC_API_KEY` from the host environment. No Claude account login required.
+
+#### Three modes at a glance
+
+| Mode | Command | What happens |
+|------|---------|--------------|
+| **Interactive** | `moat ~/app` | Human drives Claude Code (unchanged) |
+| **Dispatch** | `moat dispatch ~/app "task"` | Claude Code reasons about the task, plans sub-tasks, spawns agents, then exits |
+| **Headless** | `moat dispatch ~/app "task" --headless` | Prompt goes directly to a single agent — no reasoning layer |
+
+#### Mode 2: Dispatch with Claude Code intelligence
+
+Claude Code runs non-interactively (`-p` mode), with full write access to the workspace on its own git branch:
+
+```bash
+moat dispatch ~/Projects/myapp "add comprehensive test coverage for the auth module"
+moat dispatch ~/Projects/myapp "refactor the API layer to use repository pattern"
+moat dispatch ~/Projects/myapp "fix all TypeScript errors and update the types"
+```
+
+Claude Code will plan the task, optionally spawn background research agents, implement changes, and exit. The container stays running and is reused for subsequent dispatches.
+
+#### Mode 3: Headless (no reasoning layer)
+
+Sends the prompt directly to one agent. Useful for well-defined tasks, scripts, and CI pipelines:
+
+```bash
+moat dispatch ~/Projects/myapp "run all tests and output a summary of failures" --headless
+moat dispatch ~/Projects/myapp "list all TODO comments and create a report" --headless
+moat dispatch ~/Projects/myapp "update all npm dependencies and run tests" --headless
+```
+
+The agent runs with full write access in an isolated git worktree. Output is streamed to stdout. The worktree is cleaned up automatically on completion (success or failure).
+
+#### Flags
+
+| Flag | Description |
+|------|-------------|
+| `--headless` | Mode 3: skip Claude reasoning layer, send prompt directly to agent |
+| `--model <name>` | Model override, e.g. `claude-opus-4-6`, `claude-haiku-4-5-20251001`. Defaults to Claude's own default. |
+| `--runtime <name>` | Runtime to use (`claude`, `codex`, etc.). Defaults to `claude` or `.moat.yml` setting. |
+
+#### Worktree isolation
+
+Each dispatch creates an isolated git worktree:
+
+```
+~/.moat/worktrees/
+  └── <wsHash>/
+        └── task-<timestamp>/    ← agent works here
+              └── (full git worktree on branch moat/task-<timestamp>)
+```
+
+The agent has full write access to this worktree. If the task includes committing and pushing, those go to the `moat/task-<timestamp>` branch — the live workspace branch is never touched directly by the agent.
+
+Worktrees are removed automatically when the agent finishes. If a dispatch is interrupted, any orphaned worktrees can be cleaned up with:
+
+```bash
+git worktree list                                # see all worktrees
+git worktree remove --force ~/.moat/worktrees/<hash>/task-<ts>
+```
+
+#### Examples
+
+```bash
+# Dispatch with default model
+moat dispatch ~/Projects/myapp "add API documentation to all public endpoints"
+
+# Dispatch with a specific model
+moat dispatch ~/Projects/myapp "review and fix security vulnerabilities" \
+  --model claude-opus-4-6
+
+# Headless for a well-defined task
+moat dispatch ~/Projects/myapp "run 'npm audit fix' and commit the result" --headless
+
+# Headless in a CI script
+moat dispatch ~/Projects/api "run tests and output failures as JSON" --headless \
+  --model claude-haiku-4-5-20251001
+
+# Target a specific directory
+moat dispatch ~/Projects/monorepo/packages/auth "add unit tests for the JWT helpers"
+```
+
+#### Session lifecycle
+
+1. Container is started (or reused if already running for this workspace)
+2. Instructions, settings, and MCP configs are copied into the container
+3. **Mode 2**: `claude -p "<task>"` runs inside the container until it exits
+4. **Mode 3**: git worktree is created → agent is spawned by tool-proxy → moat waits for completion → worktree is removed
+5. Memories are synced back to the host
+
 ### `moat update` — Update and rebuild
 
 ```bash
@@ -500,7 +599,7 @@ Agent containers are cleaned up automatically when the devcontainer is torn down
 |----------|-------|
 | Image | `moat-agent-<runtime>:<version>` (cached by runtime+version, rebuilt only on version change) |
 | Network | Same sandbox network as devcontainer |
-| Workspace | Mounted read-only |
+| Workspace | Mounted read-only (background agents) or read-write worktree (dispatch mode) |
 | Resources | 4GB memory, 2 CPUs |
 | Proxy | Traffic through squid (same domain whitelist) |
 | API key | `ANTHROPIC_API_KEY` from host |

@@ -38,7 +38,8 @@ try {
   process.exit(1);
 }
 
-const { subcommand, subcommandArgs, workspace, extraDirs, claudeArgs, runtimeArg } = parsed;
+let { subcommand, subcommandArgs, workspace, extraDirs, claudeArgs, runtimeArg } = parsed;
+let dispatchOpts = null; // set when subcommand === 'dispatch'
 
 // --- Handle uninstall early ---
 if (subcommand === 'uninstall') {
@@ -95,6 +96,10 @@ ${BOLD}OPTIONS${RESET}
   --help, -h          Show this help message
 
 ${BOLD}COMMANDS${RESET}
+  ${CYAN}dispatch${RESET} [workspace] ["task"]  Run a task autonomously (interactive if no task given)
+    --headless        Skip the Claude reasoning layer; send prompt directly to agent (task required)
+    --model <name>    Model override (e.g. claude-haiku-4-5-20251001)
+    --runtime <name>  Runtime to use ${DIM}[default: claude]${RESET}
   ${CYAN}init${RESET}                Auto-detect dependencies and generate .moat.yml
   ${CYAN}doctor${RESET}              Check system prerequisites and configuration
   ${CYAN}update${RESET}              Update moat to the latest version
@@ -116,12 +121,14 @@ ${BOLD}COMMANDS${RESET}
   ${CYAN}uninstall${RESET}           Remove moat and all its data
 
 ${BOLD}EXAMPLES${RESET}
-  moat                          ${DIM}# Launch in current directory${RESET}
-  moat ~/projects/myapp         ${DIM}# Launch with a specific workspace${RESET}
-  moat --runtime codex           ${DIM}# Use Codex runtime${RESET}
-  moat --add-dir ~/shared-libs  ${DIM}# Mount extra directory${RESET}
-  moat doctor                   ${DIM}# Check prerequisites${RESET}
-  moat down --all               ${DIM}# Stop all containers${RESET}
+  moat                                      ${DIM}# Launch in current directory${RESET}
+  moat ~/projects/myapp                     ${DIM}# Launch with a specific workspace${RESET}
+  moat dispatch ~/app "add a README"        ${DIM}# Dispatch task to Claude Code${RESET}
+  moat dispatch ~/app "fix bug" --headless  ${DIM}# Headless agent, no reasoning layer${RESET}
+  moat --runtime codex                      ${DIM}# Use Codex runtime${RESET}
+  moat --add-dir ~/shared-libs              ${DIM}# Mount extra directory${RESET}
+  moat doctor                               ${DIM}# Check prerequisites${RESET}
+  moat down --all                           ${DIM}# Stop all containers${RESET}
 `);
   process.exit(0);
 }
@@ -207,6 +214,63 @@ if (subcommand === 'init') {
   process.exit(0);
 }
 
+if (subcommand === 'dispatch') {
+  // Parse: dispatch [workspace] ["task"] [--headless] [--model <name>] [--runtime <name>]
+  const dispatchRawArgs = subcommandArgs;
+  let dispatchWorkspace = process.cwd();
+  let dispatchTask = null;
+  let dispatchHeadless = false;
+  let dispatchModel = null;
+  let dispatchRuntime = null;
+  const { statSync: _statSync } = await import('node:fs');
+  const { resolve: _resolve } = await import('node:path');
+
+  for (let i = 0; i < dispatchRawArgs.length; i++) {
+    const a = dispatchRawArgs[i];
+    if (a === '--headless') {
+      dispatchHeadless = true;
+    } else if (a === '--model') {
+      i++;
+      dispatchModel = dispatchRawArgs[i];
+    } else if (a === '--runtime') {
+      i++;
+      dispatchRuntime = dispatchRawArgs[i];
+    } else if (!a.startsWith('-')) {
+      try {
+        if (existsSync(a) && _statSync(a).isDirectory()) {
+          dispatchWorkspace = _resolve(a);
+        } else if (dispatchTask === null) {
+          dispatchTask = a;
+        }
+      } catch {
+        if (dispatchTask === null) dispatchTask = a;
+      }
+    }
+  }
+
+  if (!dispatchTask && dispatchHeadless) {
+    err('dispatch --headless requires a task prompt\nUsage: moat dispatch [workspace] "task" --headless [--model <name>]');
+    process.exit(1);
+  }
+
+  // Override main flow variables so container setup uses dispatch context
+  workspace = dispatchWorkspace;
+  if (dispatchRuntime) runtimeArg = dispatchRuntime;
+  subcommand = null; // fall through to main flow
+
+  if (dispatchHeadless) {
+    // Mode 3: headless agent — main flow sets up container, then we spawn directly
+    dispatchOpts = { headless: true, task: dispatchTask, model: dispatchModel };
+  } else if (dispatchTask) {
+    // Mode 2: Claude Code as intelligence layer, runs non-interactively with -p
+    claudeArgs = ['-p', dispatchTask, ...(dispatchModel ? ['--model', dispatchModel] : [])];
+    dispatchOpts = { headless: false };
+  } else {
+    // Mode 1: interactive — no task given, launch Claude interactively in the workspace
+    dispatchOpts = { headless: false };
+  }
+}
+
 // --- Main flow ---
 
 // Compute moat version from git (short SHA + dirty flag)
@@ -233,6 +297,7 @@ process.env.MOAT_WORKSPACE = workspace;
 const hash = workspaceId(workspace);
 const wsDir = workspaceDataDir(hash);
 mkdirSync(wsDir, { recursive: true });
+const configVolume = `moat-config-${hash}`;
 
 // Create audit logger for this session
 const audit = createAuditLogger(wsDir);
@@ -294,9 +359,19 @@ if (meta.has_docker) {
   log('Docker access enabled via Podman (rootless)');
 }
 
+// Generate per-workspace volume override (config volume scoped per workspace)
+const volumesOverride = [
+  'volumes:',
+  '  moat-config:',
+  `    name: ${configVolume}`,
+  '    external: true',
+].join('\n') + '\n';
+writeFileSync(join(wsDir, 'docker-compose.volumes.yml'), volumesOverride);
+
 // Generate per-workspace devcontainer.json
 const composeFiles = [
   `${REPO_DIR}/docker-compose.yml`,
+  `${wsDir}/docker-compose.volumes.yml`,
   `${wsDir}/docker-compose.services.yml`,
   `${wsDir}/docker-compose.extra-dirs.yml`,
 ];
@@ -383,7 +458,8 @@ if (!proxyOk) {
 }
 
 // Pre-create shared volumes (external: true requires they exist before compose up)
-for (const vol of ['moat-bashhistory', 'moat-config']) {
+// Config volume is per-workspace so --continue/--resume scopes to the correct session
+for (const vol of ['moat-bashhistory', configVolume]) {
   try { execSync(`docker volume inspect ${vol}`, { stdio: 'pipe' }); }
   catch { execSync(`docker volume create ${vol}`, { stdio: 'pipe' }); }
 }
@@ -394,10 +470,10 @@ const projectName = `moat-${hash}`;
 // Start or reuse container
 const existing = await findContainer(workspace);
 if (existing) {
-  if (await mountsMatch(extraDirs, existing)) {
+  if (await mountsMatch(extraDirs, existing, configVolume)) {
     log('Reusing running container');
   } else {
-    log('Extra directories changed — recreating container...');
+    log('Container config changed — recreating container...');
     await teardown(workspace);
     await startContainer(workspace, REPO_DIR, wsDir, projectName);
   }
@@ -455,8 +531,18 @@ if (runtime.configDir === '.claude') {
   await writeContainerSettings(containerName, { permissions: { defaultMode: 'bypassPermissions' } });
 }
 
-// Execute runtime (blocks until exit)
-const exitCode = await execRuntime(runtime, workspace, REPO_DIR, wsDir, claudeArgs, extraDirs, projectName);
+// Execute runtime or headless dispatch
+let exitCode;
+if (dispatchOpts?.headless) {
+  const { runHeadlessDispatch } = await import('./lib/dispatch.mjs');
+  const proxyToken = existsSync(tokenPath) ? readFileSync(tokenPath, 'utf-8').trim() : null;
+  const result = await runHeadlessDispatch(hash, workspace, proxyToken, dispatchOpts.task, {
+    model: dispatchOpts.model,
+  });
+  exitCode = result?.exit_code ?? 0;
+} else {
+  exitCode = await execRuntime(runtime, workspace, REPO_DIR, wsDir, claudeArgs, extraDirs, projectName);
+}
 
 // Sync memories created in the container back to host for persistence
 if (runtime.configDir === '.claude') {

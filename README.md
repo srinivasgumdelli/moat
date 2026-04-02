@@ -67,6 +67,16 @@ moat attach-dir ~/Projects/shared-lib       # live-sync a dir into a running ses
 moat detach-dir shared-lib                  # stop syncing
 ```
 
+**Dispatch mode** — hand off a task to a sandboxed agent without staying in an interactive session:
+
+```bash
+moat dispatch ~/Projects/myapp "add a README with setup instructions"
+moat dispatch ~/Projects/myapp "fix all type errors" --model claude-opus-4-6
+moat dispatch ~/Projects/myapp "run tests and fix failures" --headless
+```
+
+See [docs/usage.md#dispatch-mode](docs/usage.md#dispatch-mode) for details.
+
 On first run in a workspace without `.moat.yml`, Moat scans dependency files (`package.json`, `requirements.txt`, `go.mod`, `.env.example`) and offers to create a `.moat.yml` with detected services.
 
 If `~/.claude/CLAUDE.md` exists on the host, it is automatically copied into the container so Claude Code has your global instructions.
@@ -114,7 +124,7 @@ See [docs/usage.md](docs/usage.md) for the full usage guide.
 | Non-root user | Privilege escalation |
 | Resource limits | CPU/memory exhaustion |
 | Container rebuild on change | Stale state from previous workspace |
-| Agent container isolation | Background agents run in separate containers with workspace mounted read-only |
+| Agent container isolation | Background agents run in separate containers with workspace mounted read-only; dispatch agents use isolated git worktrees with write access |
 | Podman (rootless, daemonless) | No host socket, containers inherit squid, no host filesystem access |
 | Secrets scanning | Detects leaked credentials in tool-proxy request/response flow (11 built-in patterns) |
 | Audit logging | Structured event trail for every tool execution, block, and secret detection |
@@ -145,6 +155,26 @@ Moat is designed to be **fail-closed** — if a process ignores proxy settings o
 - Review `.moat.yml` domains — only whitelist what your project needs
 - Run `moat doctor` to verify your setup is correctly configured
 - Keep Docker Desktop and your host kernel updated (relevant when `docker: true`)
+
+## Dispatch mode
+
+Run tasks autonomously — no interactive session needed:
+
+```bash
+# Mode 2: Claude Code reasons about the task, plans, spawns agents, exits
+moat dispatch ~/Projects/myapp "add comprehensive test coverage for the auth module"
+
+# Mode 3: headless — send prompt directly to an agent, no reasoning layer
+moat dispatch ~/Projects/myapp "run all tests and output failures" --headless
+
+# Model and runtime flags
+moat dispatch ~/Projects/myapp "refactor the API layer" --model claude-opus-4-6
+moat dispatch ~/Projects/myapp "task" --model claude-haiku-4-5-20251001 --runtime claude
+```
+
+All Moat security applies — squid sandbox, tool-proxy allowlists, secrets scanning. Each dispatch creates an isolated git worktree so agents work on a dedicated branch without touching the live workspace. Worktrees are cleaned up automatically on completion.
+
+See [docs/usage.md#dispatch-mode](docs/usage.md#dispatch-mode) for full details.
 
 ## Background agents
 
@@ -357,7 +387,8 @@ moat/
 │   ├── init-config.mjs           # Interactive .moat.yml creation from detected deps
 │   ├── claude-md.mjs             # Copy global CLAUDE.md into container
 │   ├── memory.mjs                # Sync project memories to/from container
-│   └── settings.mjs              # Merge host settings.json into container
+│   ├── settings.mjs              # Merge host settings.json into container
+│   └── dispatch.mjs              # Headless dispatch: worktree lifecycle + agent orchestration
 ├── install.sh                    # Unified installer (curl-pipeable, auto-detects context)
 ├── tool-proxy.mjs                # Host-side proxy server with allowlists + agent management
 ├── Dockerfile                    # Container image (devcontainer)
