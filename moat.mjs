@@ -359,6 +359,39 @@ if (meta.has_docker) {
   log('Docker access enabled via Podman (rootless)');
 }
 
+// Resolve Go version: .moat.yml languages.go > go.mod detection > default
+{
+  const { detectGoVersion } = await import('./lib/detect.mjs');
+  const DEFAULT_GO_VERSION = '1.26.1';
+  let goVersion = DEFAULT_GO_VERSION;
+  let goSource = 'default';
+
+  const moatCfgPath = join(workspace, '.moat.yml');
+  if (existsSync(moatCfgPath)) {
+    try {
+      const { parseYaml } = await import('./lib/yaml.mjs');
+      const cfg = parseYaml(readFileSync(moatCfgPath, 'utf-8'));
+      if (cfg.languages?.go) {
+        goVersion = String(cfg.languages.go);
+        goSource = '.moat.yml';
+      }
+    } catch {}
+  }
+
+  if (goSource === 'default') {
+    const detected = detectGoVersion(workspace);
+    if (detected) {
+      goVersion = detected;
+      goSource = 'go.mod';
+    }
+  }
+
+  process.env.GO_VERSION = goVersion;
+  if (goSource !== 'default') {
+    log(`Go ${DIM}${goVersion} (from ${goSource})${RESET}`);
+  }
+}
+
 // Generate per-workspace volume override (config volume scoped per workspace)
 const volumesOverride = [
   'volumes:',

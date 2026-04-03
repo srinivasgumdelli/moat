@@ -1,4 +1,4 @@
-ARG GO_VERSION=1.24.13
+ARG GO_VERSION=1.26.1
 FROM golang:${GO_VERSION} AS go-sdk
 
 FROM node:22
