@@ -42,6 +42,13 @@ docker: true
 #     - name: my-internal-token
 #       regex: "MYCO_[A-Za-z0-9]{32}"
 
+# Language versions — override the Go version installed in the container
+# If omitted, Moat auto-detects from go.mod. Falls back to Go 1.26.1.
+# The value is passed to the official golang Docker image tag.
+# languages:
+#   go: "1.24"          # minor only → latest patch (golang:1.24)
+#   go: "1.26.1"        # exact patch version (golang:1.26.1)
+
 # Quality gates — enforce checks before git push (on by default)
 # All detected project types are checked (TypeScript, Python, Go, Terraform, Docker, K8s).
 # quality_gates:
