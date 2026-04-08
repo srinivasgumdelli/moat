@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Moat tool proxy — runs on the host, executes commands with host credentials
-// Container wrapper scripts proxy gh/git/terraform/kubectl/aws through this server
+// Container wrapper scripts proxy gh/git/terraform/kubectl/aws/acli through this server
 // Container wrapper scripts send container paths; proxy translates to host paths
 // IaC tools (terraform/kubectl/aws) are restricted to read-only operations via allowlists
 
@@ -233,6 +233,48 @@ function validateJira(args) {
     }
   }
   return { allowed: true };
+}
+
+// Atlassian CLI (acli): read-only allowlist
+// Product-level commands (jira, admin, rovodev) and their read-only actions
+const ACLI_ALLOWED_PRODUCTS = new Set(['jira', 'admin', 'rovodev', 'feedback', 'help', 'version']);
+
+// Read-only action verbs (applied to product subcommands)
+const ACLI_READ_ACTIONS = new Set([
+  'search', 'list', 'view', 'list-sprints', 'list-workitems',
+  'status', 'help',
+]);
+
+// Auth subcommands are always allowed (login/logout/status/switch)
+const ACLI_AUTH_ACTIONS = new Set(['login', 'logout', 'status', 'switch']);
+
+function validateAcli(args) {
+  if (args.length === 0) return { allowed: true }; // bare `acli` shows help
+  const product = args[0];
+  if (product.startsWith('-')) return { allowed: true }; // flags like --help, --version
+  if (!ACLI_ALLOWED_PRODUCTS.has(product)) {
+    return { allowed: false, reason: `acli ${product} is blocked by Moat (read-only mode)` };
+  }
+  if (args.length < 2) return { allowed: true }; // bare product shows help
+  const subcmd = args[1];
+  if (subcmd.startsWith('-')) return { allowed: true }; // flags like --help
+  // Auth subcommands are always allowed
+  if (subcmd === 'auth') {
+    const action = args[2];
+    if (!action || action.startsWith('-')) return { allowed: true };
+    if (ACLI_AUTH_ACTIONS.has(action)) return { allowed: true };
+    return { allowed: false, reason: `acli ${product} auth ${action} is blocked by Moat (read-only mode)` };
+  }
+  // For other subcommands, check the action verb
+  if (args.length >= 3) {
+    const action = args[2];
+    if (!action || action.startsWith('-')) return { allowed: true };
+    if (ACLI_READ_ACTIONS.has(action)) return { allowed: true };
+    return { allowed: false, reason: `acli ${product} ${subcmd} ${action} is blocked by Moat (read-only mode)` };
+  }
+  // Two-arg commands (e.g. "acli jira board") — check if the subcmd itself is read-only
+  if (ACLI_READ_ACTIONS.has(subcmd)) return { allowed: true };
+  return { allowed: true }; // bare subcommand (shows help)
 }
 
 // Check if a path is a known container mount point
@@ -740,6 +782,42 @@ const server = http.createServer(async (req, res) => {
     process.stderr.write(`[tool-proxy] jira ${body.args.join(' ')} -> exit ${result.exitCode}\n`);
     auditEmit(wsHash, 'tool.execute', { endpoint: 'jira', args_summary: body.args.join(' '), exit_code: result.exitCode, duration_ms });
     if (secretsPostScan('jira', result, wsHash, res)) return;
+    sendJson(res, 200, result);
+    return;
+  }
+
+  // acli handler (read-only)
+  if (req.url === '/acli' && req.method === 'POST') {
+    const body = await readBody(req);
+    if (!body || !Array.isArray(body.args)) {
+      sendJson(res, 400, { success: false, error: 'Invalid request: args required' });
+      return;
+    }
+    const validation = validateAcli(body.args);
+    const wsHash = body.workspace_hash || '';
+    if (!validation.allowed) {
+      process.stderr.write(`[tool-proxy] acli ${body.args.join(' ')} BLOCKED (${validation.reason})\n`);
+      auditEmit(wsHash, 'tool.blocked', { endpoint: 'acli', args_summary: body.args.join(' '), reason: validation.reason });
+      sendJson(res, 200, { success: false, blocked: true, reason: validation.reason, stdout: '', stderr: validation.reason + '\n', exitCode: 126 });
+      return;
+    }
+    const options = {};
+    const hostCwd = toHostPath(body.cwd, wsHash);
+    if (hostCwd && existsSync(hostCwd)) {
+      options.cwd = hostCwd;
+    } else if (body.cwd && !hostCwd) {
+      const msg = `No path mapping for workspace hash '${wsHash}' — session may have ended. Restart moat to fix.`;
+      process.stderr.write(`[tool-proxy] acli REJECTED: ${msg}\n`);
+      sendJson(res, 400, { success: false, error: msg });
+      return;
+    }
+    if (secretsPreScan('acli', body.args, wsHash, res)) return;
+    const startTime = Date.now();
+    const result = await executeCommand('acli', body.args, options);
+    const duration_ms = Date.now() - startTime;
+    process.stderr.write(`[tool-proxy] acli ${body.args.join(' ')} -> exit ${result.exitCode}\n`);
+    auditEmit(wsHash, 'tool.execute', { endpoint: 'acli', args_summary: body.args.join(' '), exit_code: result.exitCode, duration_ms });
+    if (secretsPostScan('acli', result, wsHash, res)) return;
     sendJson(res, 200, result);
     return;
   }

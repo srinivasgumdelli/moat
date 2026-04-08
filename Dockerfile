@@ -95,6 +95,11 @@ RUN ARCH=$(dpkg --print-architecture) && \
     tar xzf jira-cli.tar.gz && mv jira_${JIRA_CLI_VERSION}_linux_${ARCH}/bin/jira /usr/local/bin/jira.real && \
     rm -rf jira-cli.tar.gz jira_${JIRA_CLI_VERSION}_linux_${ARCH}
 
+# Atlassian CLI (acli)
+RUN ARCH=$(dpkg --print-architecture) && \
+    curl -sL "https://acli.atlassian.com/linux/latest/acli_linux_${ARCH}/acli" -o /usr/local/bin/acli.real && \
+    chmod +x /usr/local/bin/acli.real
+
 # Beads task tracker (bd CLI)
 ARG BEADS_VERSION=0.49.6
 RUN ARCH=$(dpkg --print-architecture) && \
@@ -163,7 +168,7 @@ RUN if [ "$RUNTIME" = "claude" ]; then \
       mkdir -p /home/node/.claude/commands /home/node/.claude/hooks /home/node/.claude/mcp && \
       curl -sL "https://raw.githubusercontent.com/steveyegge/beads/main/integrations/claude-code/commands/plan-to-beads.md" \
         -o /home/node/.claude/commands/plan-to-beads.md && \
-      jq '. + {"permissions": {"allow": ((.permissions.allow // []) + ["Bash(bd:*)", "Bash(agent:*)"])}, "hooks": {"PostToolUse": [{"matcher": "Edit|Write", "hooks": [{"type": "command", "command": "/home/node/.claude/hooks/auto-diagnostics.sh", "timeout": 30}]}]}, "mcpServers": {"ide-tools": {"command": "node", "args": ["/home/node/.claude/mcp/ide-tools.mjs"]}, "ide-lsp": {"command": "node", "args": ["/home/node/.claude/mcp/ide-lsp.mjs"]}}, "statusLine": {"type": "command", "command": "/home/node/.claude/hooks/statusline.sh", "padding": 2}}' /home/node/.claude/settings.json > /tmp/settings.json && \
+      jq '. + {"permissions": {"allow": ((.permissions.allow // []) + ["Bash(bd:*)", "Bash(agent:*)", "Bash(acli:*)"])}, "hooks": {"PostToolUse": [{"matcher": "Edit|Write", "hooks": [{"type": "command", "command": "/home/node/.claude/hooks/auto-diagnostics.sh", "timeout": 30}]}]}, "mcpServers": {"ide-tools": {"command": "node", "args": ["/home/node/.claude/mcp/ide-tools.mjs"]}, "ide-lsp": {"command": "node", "args": ["/home/node/.claude/mcp/ide-lsp.mjs"]}}, "statusLine": {"type": "command", "command": "/home/node/.claude/hooks/statusline.sh", "padding": 2}}' /home/node/.claude/settings.json > /tmp/settings.json && \
       mv /tmp/settings.json /home/node/.claude/settings.json; \
     fi
 
@@ -176,6 +181,7 @@ COPY terraform-proxy-wrapper.sh /usr/local/bin/terraform
 COPY kubectl-proxy-wrapper.sh /usr/local/bin/kubectl
 COPY aws-proxy-wrapper.sh /usr/local/bin/aws
 COPY jira-proxy-wrapper.sh /usr/local/bin/jira
+COPY acli-proxy-wrapper.sh /usr/local/bin/acli
 # docker → podman compatibility wrapper (handles "docker compose" → podman-compose)
 RUN printf '#!/bin/sh\nif [ "$1" = "compose" ]; then shift; exec podman-compose "$@"; fi\nexec podman "$@"\n' \
       > /usr/local/bin/docker && \
@@ -183,7 +189,7 @@ RUN printf '#!/bin/sh\nif [ "$1" = "compose" ]; then shift; exec podman-compose 
 RUN chmod 644 /etc/tool-proxy-token && \
     chmod +x /usr/local/bin/git /usr/local/bin/gh \
              /usr/local/bin/terraform /usr/local/bin/kubectl /usr/local/bin/aws \
-             /usr/local/bin/jira \
+             /usr/local/bin/jira /usr/local/bin/acli \
              /usr/local/bin/docker
 
 # Copy verification script
