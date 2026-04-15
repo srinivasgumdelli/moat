@@ -169,19 +169,20 @@ const AWS_ALLOWED_ACTIONS = new Set([
   'sts get-session-token',
   'sts get-access-key-info',
   's3 ls',
-  's3 cp',               // read direction determined by args, but commonly needed
   's3api head-object',
   's3api head-bucket',
-  'iam generate-credential-report',
   'ec2 wait',
   'cloudwatch wait',
   'logs tail',
   'logs filter-log-events',
-  'logs start-query',     // starts an async query (read-only)
-  'logs stop-query',
   'logs get-query-results',
-  'cloudformation detect-stack-drift',
-  'cloudformation detect-stack-resource-drift',
+]);
+
+// Mutating actions that would otherwise pass the verb-prefix check
+const AWS_BLOCKED_ACTIONS = new Set([
+  'cloudformation detect-stack-drift',           // writes drift status back to the stack
+  'cloudformation detect-stack-resource-drift',  // same
+  'codecommit test-repository-triggers',         // invokes configured triggers (Lambda/SNS side effects)
 ]);
 
 function validateAws(args) {
@@ -191,10 +192,28 @@ function validateAws(args) {
   if (nonFlagArgs.length < 2) return { allowed: true }; // just service name or help
   const service = nonFlagArgs[0];
   const action = nonFlagArgs[1];
+  const key = `${service} ${action}`;
+
+  // Block specific mutating actions that would otherwise pass the verb-prefix check
+  if (AWS_BLOCKED_ACTIONS.has(key)) {
+    return { allowed: false, reason: `aws ${key} is blocked by Moat (mutates state)` };
+  }
+
   // Check explicit service+action allowlist first
-  if (AWS_ALLOWED_ACTIONS.has(`${service} ${action}`)) {
+  if (AWS_ALLOWED_ACTIONS.has(key)) {
     return { allowed: true };
   }
+
+  // s3 cp is safe only when downloading (destination is not an s3:// URI)
+  if (key === 's3 cp') {
+    const positional = nonFlagArgs.slice(2);
+    const dest = positional[positional.length - 1];
+    if (!dest || dest.startsWith('s3://')) {
+      return { allowed: false, reason: 'aws s3 cp to s3:// destination is blocked by Moat (write operation)' };
+    }
+    return { allowed: true };
+  }
+
   // Check verb prefix against allowed read-only verbs
   const verb = action.split('-')[0];
   if (AWS_ALLOWED_VERBS.has(verb)) {
