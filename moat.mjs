@@ -387,8 +387,19 @@ const mcpDomains = extractMcpDomains(hostMcpServers);
 
 // Extract external HTTP MCP servers to proxy through tool-proxy (auth stays on host)
 const httpMcpServers = extractHttpMcpServers(hostMcpServers);
+// Read moat global config for mcpReadOnly flag (default: true — MCPs are read-only by default).
+// To allow write operations globally: set { "mcpReadOnly": false } in ~/.moat/config.json
+const moatConfigPath = join(process.env.HOME, '.moat', 'config.json');
+let mcpReadOnly = true;
+try {
+  if (existsSync(moatConfigPath)) {
+    const moatCfg = JSON.parse(readFileSync(moatConfigPath, 'utf-8'));
+    if (moatCfg.mcpReadOnly === false) mcpReadOnly = false;
+  }
+} catch {}
+
 // Always write mcp-servers.json (even empty) to clear stale configs from previous runs
-writeFileSync(join(DATA_DIR, 'mcp-servers.json'), JSON.stringify(httpMcpServers, null, 2) + '\n');
+writeFileSync(join(DATA_DIR, 'mcp-servers.json'), JSON.stringify({ _readOnly: mcpReadOnly, ...httpMcpServers }, null, 2) + '\n');
 if (Object.keys(httpMcpServers).length > 0) {
   log(`Proxying ${Object.keys(httpMcpServers).length} HTTP MCP server${Object.keys(httpMcpServers).length === 1 ? '' : 's'} through tool-proxy ${DIM}(${Object.keys(httpMcpServers).join(', ')})${RESET}`);
 }
