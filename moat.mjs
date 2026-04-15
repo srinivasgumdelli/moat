@@ -29,6 +29,17 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_DIR = __dirname;
 const DATA_DIR = join(process.env.HOME, '.moat', 'data');
 
+// --- Node.js version check ---
+const nodeMajor = parseInt(process.versions.node.split('.')[0], 10);
+if (nodeMajor < 20) {
+  process.stderr.write(
+    `[moat] Node.js v${process.versions.node} is too old. @devcontainers/cli requires Node >= 20.\n` +
+    `[moat] Upgrade with: brew upgrade node\n` +
+    `[moat] Then reinstall the devcontainer CLI: npm install -g @devcontainers/cli\n`
+  );
+  process.exit(1);
+}
+
 // --- Parse arguments ---
 let parsed;
 try {
