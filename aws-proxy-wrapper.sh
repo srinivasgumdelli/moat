@@ -18,8 +18,12 @@ else
 fi
 
 CWD="$(pwd)"
-JSON_PAYLOAD=$(jq -n --argjson args "$ARGS_JSON" --arg cwd "$CWD" --arg hash "${MOAT_WORKSPACE_HASH:-}" \
-  '{args: $args, cwd: $cwd, workspace_hash: $hash}')
+JSON_PAYLOAD=$(jq -n \
+  --argjson args "$ARGS_JSON" \
+  --arg cwd "$CWD" \
+  --arg hash "${MOAT_WORKSPACE_HASH:-}" \
+  --arg profile "${AWS_PROFILE:-}" \
+  '{args: $args, cwd: $cwd, workspace_hash: $hash, aws_profile: $profile}')
 
 RESPONSE=$(curl -s --max-time 300 -X POST "${PROXY_URL}/aws" \
   -H "Content-Type: application/json" \
