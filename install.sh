@@ -84,7 +84,7 @@ else
 fi
 
 # Docker
-if ! command -v docker &>/dev/null; then
+if ! command -v docker &>/dev/null && [ ! -d "/Applications/Docker.app" ]; then
   if $HAS_BREW; then
     action_msg "Installing Docker Desktop via brew..."
     brew install --cask docker
@@ -95,9 +95,14 @@ if ! command -v docker &>/dev/null; then
   else
     missing+=(docker)
   fi
+elif command -v docker &>/dev/null; then
+  pass_msg "docker already installed"
+else
+  pass_msg "Docker Desktop already installed"
 fi
 
-# Node.js
+# Node.js (requires >= 20 for @devcontainers/cli)
+NODE_MIN_MAJOR=20
 if ! command -v node &>/dev/null; then
   if $HAS_BREW; then
     action_msg "Installing node via brew..."
@@ -107,7 +112,20 @@ if ! command -v node &>/dev/null; then
     missing+=(node)
   fi
 else
-  pass_msg "node already installed"
+  NODE_MAJOR="$(node -e 'process.stdout.write(process.version.replace(/^v/,"").split(".")[0])')"
+  if [ "$NODE_MAJOR" -lt "$NODE_MIN_MAJOR" ]; then
+    warn_msg "Node.js v${NODE_MAJOR} is too old (@devcontainers/cli requires >= ${NODE_MIN_MAJOR})"
+    if $HAS_BREW; then
+      action_msg "Upgrading node via brew..."
+      brew upgrade node || brew install node
+      pass_msg "node upgraded"
+    else
+      fail_msg "Please upgrade Node.js to v${NODE_MIN_MAJOR}+ and re-run"
+      exit 1
+    fi
+  else
+    pass_msg "node already installed (v${NODE_MAJOR})"
+  fi
 fi
 
 if [ ${#missing[@]} -gt 0 ]; then
