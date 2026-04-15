@@ -121,6 +121,7 @@ ${BOLD}COMMANDS${RESET}
   ${CYAN}stop${RESET}                Stop the tool proxy
   ${CYAN}attach-dir${RESET} <dir>    Mount an additional directory to a running container
   ${CYAN}detach-dir${RESET} <dir|--all>  Unmount a previously attached directory
+  ${CYAN}sync-skills${RESET}            Re-copy skills and commands from host into running container
   ${CYAN}log${RESET} [lines]         Show tool proxy logs ${DIM}[default: 50 lines]${RESET}
     --follow, -f      Follow log output
   ${CYAN}audit${RESET} [hash]        View audit log for a workspace
@@ -193,6 +194,43 @@ if (subcommand === 'attach-dir') {
 
 if (subcommand === 'detach-dir') {
   await detach(subcommandArgs);
+  process.exit(0);
+}
+
+if (subcommand === 'sync-skills') {
+  const { findContainer, findMoatContainers } = await import('./lib/container.mjs');
+  const { copySkills, copyCommands } = await import('./lib/skills.mjs');
+  const { createInterface } = await import('node:readline');
+
+  let containerName = await findContainer(workspace);
+  if (!containerName) {
+    const running = await findMoatContainers();
+    if (running.length === 0) {
+      err("No running moat container. Start a session first with 'moat'.");
+      process.exit(1);
+    }
+    if (running.length === 1) {
+      containerName = running[0].name;
+    } else {
+      log('Multiple moat containers running. Which workspace?');
+      for (let i = 0; i < running.length; i++) {
+        console.log(`  \x1b[1m${i + 1}\x1b[0m) ${running[i].workspace}`);
+      }
+      const rl = createInterface({ input: process.stdin, output: process.stdout });
+      const answer = await new Promise((res) => {
+        rl.question(`\n  ? Select workspace [1-${running.length}] `, (a) => { rl.close(); res(a); });
+      });
+      const idx = parseInt(answer, 10) - 1;
+      if (isNaN(idx) || idx < 0 || idx >= running.length) {
+        err('Invalid selection.');
+        process.exit(1);
+      }
+      containerName = running[idx].name;
+    }
+  }
+
+  await copySkills(containerName);
+  await copyCommands(containerName);
   process.exit(0);
 }
 
