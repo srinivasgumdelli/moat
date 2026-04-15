@@ -739,6 +739,9 @@ const server = http.createServer(async (req, res) => {
       sendJson(res, 400, { success: false, error: msg });
       return;
     }
+    if (body.aws_profile) {
+      options.env = { AWS_PROFILE: body.aws_profile };
+    }
     if (secretsPreScan('aws', body.args, wsHash, res)) return;
     const startTime = Date.now();
     const result = await executeCommand('aws', body.args, options);
