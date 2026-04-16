@@ -185,23 +185,26 @@ const AWS_BLOCKED_ACTIONS = new Set([
   'codecommit test-repository-triggers',         // invokes configured triggers (Lambda/SNS side effects)
 ]);
 
-// MCP read-only enforcement — verb tokens that indicate a mutating tool call
+// MCP read-only enforcement — allowlist of verb tokens that identify read-only tool calls.
 // Used when _readOnly is true in mcp-servers.json (the default).
-// To disable globally: set mcpReadOnly: false in ~/.moat/config.json
-const MCP_WRITE_VERBS = new Set([
-  'create', 'add', 'edit', 'update', 'send', 'delete', 'remove',
-  'insert', 'write', 'put', 'patch', 'publish', 'upload', 'submit',
-  'modify', 'rename', 'archive', 'schedule', 'transition', 'post',
+// To allow write operations, start moat with --mcp-rw.
+const MCP_READ_VERBS = new Set([
+  'get', 'list', 'read', 'search', 'find', 'fetch', 'describe',
+  'show', 'view', 'lookup', 'check', 'query', 'count', 'info',
 ]);
 
-function isMcpWriteTool(toolName) {
-  // Split camelCase and underscores into lowercase word tokens, then check each
+// Tools allowed regardless of verb pattern (auth flows and other safe non-verb-named tools)
+const MCP_ALLOWED_TOOLS = new Set(['authenticate', 'complete_authentication']);
+
+function isMcpReadTool(toolName) {
+  if (MCP_ALLOWED_TOOLS.has(toolName)) return true;
+  // Split camelCase and underscores into lowercase word tokens
   const words = toolName
     .replace(/([a-z])([A-Z])/g, '$1_$2')
     .toLowerCase()
     .split(/_+/)
     .filter(Boolean);
-  return words.some(w => MCP_WRITE_VERBS.has(w));
+  return words.some(w => MCP_READ_VERBS.has(w));
 }
 
 function validateAws(args) {
@@ -887,7 +890,7 @@ const server = http.createServer(async (req, res) => {
           const rpcBody = JSON.parse(body.toString());
           if (rpcBody.method === 'tools/call' && rpcBody.params?.name) {
             const toolName = rpcBody.params.name;
-            if (isMcpWriteTool(toolName)) {
+            if (!isMcpReadTool(toolName)) {
               process.stderr.write(`[tool-proxy] mcp/${serverName} BLOCKED write tool: ${toolName}\n`);
               res.writeHead(200, { 'Content-Type': 'application/json' });
               res.end(JSON.stringify({
@@ -895,7 +898,7 @@ const server = http.createServer(async (req, res) => {
                 id: rpcBody.id ?? null,
                 error: {
                   code: -32600,
-                  message: `Tool '${toolName}' is blocked: MCP server '${serverName}' is in read-only mode. Set mcpReadOnly: false in ~/.moat/config.json to allow write operations.`,
+                  message: `Tool '${toolName}' is blocked: MCP server '${serverName}' is in read-only mode. Start moat with --mcp-rw to allow write operations.`,
                 },
               }));
               return;
