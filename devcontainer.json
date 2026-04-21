@@ -20,7 +20,8 @@
   },
   "remoteUser": "node",
   "remoteEnv": {
-    "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}"
+    "ANTHROPIC_API_KEY": "${localEnv:ANTHROPIC_API_KEY}",
+    "COLORTERM": "${localEnv:COLORTERM}"
   },
   "postStartCommand": "echo '[moat] Container ready'"
 }
