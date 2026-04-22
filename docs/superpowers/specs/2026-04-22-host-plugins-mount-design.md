@@ -1,7 +1,9 @@
 # Host plugins mount — design
 
 **Date:** 2026-04-22
+
 **Status:** Accepted
+
 **Trigger:** "install superpowers for moat"
 
 ## Problem
