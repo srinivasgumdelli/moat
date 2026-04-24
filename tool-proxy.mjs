@@ -5,7 +5,7 @@
 // IaC tools (terraform/kubectl/aws) are restricted to read-only operations via allowlists
 
 import http from 'node:http';
-import { spawn, execSync } from 'node:child_process';
+import { spawn, execSync, execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, readdirSync, mkdirSync, writeFileSync, rmSync, unlinkSync, appendFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import { tmpdir } from 'node:os';
@@ -412,6 +412,150 @@ function readRawBody(req) {
     });
     req.on('end', () => { resolve(Buffer.concat(chunks)); });
   });
+}
+
+// --- MCP OAuth token management (macOS Keychain) ---
+//
+// For OAuth-based MCP servers (those tagged { oauth: true }), tool-proxy reads
+// the access token from the host Keychain at request time. Credentials never
+// enter the container. Tokens are refreshed on the host so refresh_token
+// rotation stays consistent with Claude Code's own MCP sessions.
+
+const KEYCHAIN_LABEL = 'Claude Code-credentials';
+const KEYCHAIN_TTL_MS = 60 * 1000;
+const REFRESH_BUFFER_MS = 60 * 1000; // refresh if the token expires within 60s
+
+let keychainCache = null;
+let keychainCacheAt = 0;
+const discoveryCache = new Map();
+const refreshInFlight = new Map();
+
+function readKeychain(force = false) {
+  if (!force && keychainCache && Date.now() - keychainCacheAt < KEYCHAIN_TTL_MS) {
+    return keychainCache;
+  }
+  try {
+    const raw = execFileSync('security', ['find-generic-password', '-l', KEYCHAIN_LABEL, '-w'], {
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).toString().trim();
+    keychainCache = JSON.parse(raw);
+    keychainCacheAt = Date.now();
+    return keychainCache;
+  } catch (e) {
+    process.stderr.write(`[tool-proxy] keychain read failed: ${e.message}\n`);
+    return null;
+  }
+}
+
+function writeKeychain(data) {
+  try {
+    execFileSync('security', [
+      'add-generic-password', '-U',
+      '-s', KEYCHAIN_LABEL,
+      '-a', process.env.USER || '',
+      '-l', KEYCHAIN_LABEL,
+      '-w', JSON.stringify(data),
+    ], { stdio: ['ignore', 'ignore', 'pipe'] });
+    keychainCache = data;
+    keychainCacheAt = Date.now();
+    return true;
+  } catch (e) {
+    process.stderr.write(`[tool-proxy] keychain write failed: ${e.message}\n`);
+    return false;
+  }
+}
+
+function findOAuthEntry(data, serverName) {
+  if (!data?.mcpOAuth) return null;
+  const prefix = `${serverName}|`;
+  for (const [key, entry] of Object.entries(data.mcpOAuth)) {
+    if (key.startsWith(prefix)) return { key, entry };
+  }
+  return null;
+}
+
+async function discoverTokenEndpoint(authServerUrl) {
+  if (discoveryCache.has(authServerUrl)) return discoveryCache.get(authServerUrl);
+  const discoveryUrl = new URL('/.well-known/oauth-authorization-server', authServerUrl).toString();
+  const res = await fetch(discoveryUrl);
+  if (!res.ok) throw new Error(`discovery ${res.status}`);
+  const metadata = await res.json();
+  discoveryCache.set(authServerUrl, metadata);
+  return metadata;
+}
+
+async function refreshAccessToken(serverName) {
+  // Single-flight: coalesce concurrent refreshes for the same server
+  if (refreshInFlight.has(serverName)) return refreshInFlight.get(serverName);
+
+  const p = (async () => {
+    // Re-read keychain in case host Claude Code already refreshed
+    const data = readKeychain(true);
+    if (!data) return null;
+    const found = findOAuthEntry(data, serverName);
+    if (!found) return null;
+    const { key, entry } = found;
+
+    if (entry.expiresAt && entry.expiresAt > Date.now() + REFRESH_BUFFER_MS) {
+      return entry;
+    }
+    if (!entry.refreshToken || !entry.clientId || !entry.discoveryState?.authorizationServerUrl) {
+      process.stderr.write(`[tool-proxy] mcp/${serverName} refresh: missing refresh_token/clientId/discoveryState\n`);
+      return null;
+    }
+
+    try {
+      const metadata = await discoverTokenEndpoint(entry.discoveryState.authorizationServerUrl);
+      if (!metadata.token_endpoint) throw new Error('no token_endpoint in discovery');
+
+      const body = new URLSearchParams({
+        grant_type: 'refresh_token',
+        refresh_token: entry.refreshToken,
+        client_id: entry.clientId,
+      });
+      const res = await fetch(metadata.token_endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: body.toString(),
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        process.stderr.write(`[tool-proxy] mcp/${serverName} refresh: ${res.status} ${text.slice(0, 200)}\n`);
+        return null;
+      }
+      const tok = await res.json();
+      const updated = {
+        ...entry,
+        accessToken: tok.access_token,
+        refreshToken: tok.refresh_token ?? entry.refreshToken,
+        expiresAt: Date.now() + (tok.expires_in ?? 3600) * 1000,
+        scope: tok.scope ?? entry.scope,
+      };
+      data.mcpOAuth[key] = updated;
+      writeKeychain(data);
+      process.stderr.write(`[tool-proxy] mcp/${serverName} refreshed (expires in ${tok.expires_in ?? 3600}s)\n`);
+      return updated;
+    } catch (e) {
+      process.stderr.write(`[tool-proxy] mcp/${serverName} refresh error: ${e.message}\n`);
+      return null;
+    }
+  })();
+
+  refreshInFlight.set(serverName, p);
+  try { return await p; } finally { refreshInFlight.delete(serverName); }
+}
+
+async function getOAuthAccessToken(serverName) {
+  const data = readKeychain();
+  if (!data) return null;
+  const found = findOAuthEntry(data, serverName);
+  if (!found) return null;
+
+  if (!found.entry.expiresAt || found.entry.expiresAt <= Date.now() + REFRESH_BUFFER_MS) {
+    const refreshed = await refreshAccessToken(serverName);
+    return refreshed?.accessToken ?? null;
+  }
+  return found.entry.accessToken;
 }
 
 // Load MCP server config from DATA_DIR/mcp-servers.json (hot-reload on each request)
@@ -926,18 +1070,44 @@ const server = http.createServer(async (req, res) => {
         upstreamHeaders['mcp-session-id'] = req.headers['mcp-session-id'];
       }
 
-      // Inject auth headers from server config (these never enter the container)
-      if (serverConfig.headers) {
+      // Inject auth — either static headers from config (credentials on disk)
+      // or an OAuth access token read from the host keychain at request time.
+      // In both cases credentials never enter the container.
+      if (serverConfig.oauth === true) {
+        const token = await getOAuthAccessToken(serverName);
+        if (!token) {
+          sendJson(res, 401, {
+            success: false,
+            error: `OAuth token unavailable for MCP server '${serverName}'. Re-authenticate on the host via Claude Code.`,
+          });
+          return;
+        }
+        upstreamHeaders['authorization'] = `Bearer ${token}`;
+      } else if (serverConfig.headers) {
         for (const [key, value] of Object.entries(serverConfig.headers)) {
           upstreamHeaders[key] = value;
         }
       }
 
-      const upstreamRes = await fetch(upstreamUrl, {
+      let upstreamRes = await fetch(upstreamUrl, {
         method: req.method,
         headers: upstreamHeaders,
         body: body.length > 0 ? body : undefined,
       });
+
+      // OAuth 401 — force-refresh once in case upstream revoked the token or
+      // our cached copy is stale (e.g., host Claude Code rotated refresh token).
+      if (serverConfig.oauth === true && upstreamRes.status === 401) {
+        const refreshed = await refreshAccessToken(serverName);
+        if (refreshed?.accessToken) {
+          upstreamHeaders['authorization'] = `Bearer ${refreshed.accessToken}`;
+          upstreamRes = await fetch(upstreamUrl, {
+            method: req.method,
+            headers: upstreamHeaders,
+            body: body.length > 0 ? body : undefined,
+          });
+        }
+      }
 
       // Forward response status and key headers
       const responseHeaders = {};
