@@ -185,6 +185,28 @@ const AWS_BLOCKED_ACTIONS = new Set([
   'codecommit test-repository-triggers',         // invokes configured triggers (Lambda/SNS side effects)
 ]);
 
+// MCP read-only enforcement — allowlist of verb tokens that identify read-only tool calls.
+// Used when _readOnly is true in mcp-servers.json (the default).
+// To allow write operations, start moat with --mcp-rw.
+const MCP_READ_VERBS = new Set([
+  'get', 'list', 'read', 'search', 'find', 'fetch', 'describe',
+  'show', 'view', 'lookup', 'check', 'query', 'count', 'info',
+]);
+
+// Tools allowed regardless of verb pattern (auth flows and other safe non-verb-named tools)
+const MCP_ALLOWED_TOOLS = new Set(['authenticate', 'complete_authentication']);
+
+function isMcpReadTool(toolName) {
+  if (MCP_ALLOWED_TOOLS.has(toolName)) return true;
+  // Split camelCase and underscores into lowercase word tokens
+  const words = toolName
+    .replace(/([a-z])([A-Z])/g, '$1_$2')
+    .toLowerCase()
+    .split(/_+/)
+    .filter(Boolean);
+  return words.some(w => MCP_READ_VERBS.has(w));
+}
+
 function validateAws(args) {
   if (args.length === 0) return { allowed: true };
   // Find the subcommand (skip flags like --region, --profile)
@@ -858,6 +880,34 @@ const server = http.createServer(async (req, res) => {
 
     try {
       const body = await readRawBody(req);
+
+      // Enforce MCP read-only mode: block tools/call requests for write-pattern tool names.
+      // Controlled by _readOnly in mcp-servers.json (default true); per-server serverConfig.readOnly overrides.
+      const globalReadOnly = mcpServers._readOnly !== false;
+      const isReadOnly = serverConfig.readOnly !== undefined ? serverConfig.readOnly : globalReadOnly;
+      if (isReadOnly && req.method === 'POST' && body.length > 0) {
+        try {
+          const rpcBody = JSON.parse(body.toString());
+          if (rpcBody.method === 'tools/call' && rpcBody.params?.name) {
+            const toolName = rpcBody.params.name;
+            if (!isMcpReadTool(toolName)) {
+              process.stderr.write(`[tool-proxy] mcp/${serverName} BLOCKED write tool: ${toolName}\n`);
+              res.writeHead(200, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({
+                jsonrpc: '2.0',
+                id: rpcBody.id ?? null,
+                error: {
+                  code: -32600,
+                  message: `Tool '${toolName}' is blocked: MCP server '${serverName}' is in read-only mode. Start moat with --mcp-rw to allow write operations.`,
+                },
+              }));
+              return;
+            }
+          }
+        } catch {
+          // Not valid JSON or not a tools/call request — pass through unchanged
+        }
+      }
 
       // Build upstream URL — append any sub-path after /mcp/<name>
       const subPath = mcpMatch[2] || '';
