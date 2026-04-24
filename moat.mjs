@@ -200,9 +200,11 @@ if (subcommand === 'detach-dir') {
 if (subcommand === 'sync-skills') {
   const { findContainer, findMoatContainers } = await import('./lib/container.mjs');
   const { copySkills, copyCommands } = await import('./lib/skills.mjs');
+  const { copyPlugins } = await import('./lib/plugins.mjs');
   const { createInterface } = await import('node:readline');
 
   let containerName = await findContainer(workspace);
+  let containerWorkspace = workspace;
   if (!containerName) {
     const running = await findMoatContainers();
     if (running.length === 0) {
@@ -211,6 +213,7 @@ if (subcommand === 'sync-skills') {
     }
     if (running.length === 1) {
       containerName = running[0].name;
+      containerWorkspace = running[0].workspace;
     } else {
       log('Multiple moat containers running. Which workspace?');
       for (let i = 0; i < running.length; i++) {
@@ -226,11 +229,13 @@ if (subcommand === 'sync-skills') {
         process.exit(1);
       }
       containerName = running[idx].name;
+      containerWorkspace = running[idx].workspace;
     }
   }
 
   await copySkills(containerName);
   await copyCommands(containerName);
+  await copyPlugins(containerName, containerWorkspace);
   process.exit(0);
 }
 
