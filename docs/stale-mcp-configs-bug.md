@@ -4,6 +4,8 @@
 **PR:** https://github.com/srinivasgumdelli/moat/pull/16
 **Status:** 3 root causes identified and patched, but stale configs still persist in testing.
 
+> **Note (2026-04):** This document captures the historical state of MCP forwarding at the time of PR #16. Since PR #58, OAuth-based HTTP MCP servers are also proxied through tool-proxy (access tokens read from the host Keychain per request). The "not proxied / forwarded directly" path described below no longer exists for external OAuth MCPs. See [setup.md#mcp-server-forwarding](setup.md#mcp-server-forwarding) for current behavior.
+
 ## Problem
 
 When a user configures MCP servers on their host, runs Moat, then later removes or changes those servers and runs Moat again, the old MCP configs persist inside the container. Claude Code sees stale/phantom MCP servers that no longer exist on the host.
@@ -94,7 +96,7 @@ As of latest inspection, the container's `settings.json` contains:
 }
 ```
 
-The 3 non-builtin servers (`glean_default`, `datadog-mcp`, `glean`) are all `type: "http"` without auth headers (OAuth-based). They go through the "not proxied" path in `copyMcpServers` and are forwarded directly with URL rewriting.
+The 3 non-builtin servers (`glean_default`, `datadog-mcp`, `glean`) are all `type: "http"` without auth headers (OAuth-based). At the time of this investigation they went through the "not proxied" path in `copyMcpServers` and were forwarded directly with URL rewriting. **Since PR #58 these are proxied through tool-proxy as well**, with access tokens read from the host Keychain per request.
 
 **Unknown:** Whether these servers are currently in the host config (legitimately forwarded on this run) or stale from a previous run. This cannot be determined from inside the container since `readHostMcpServers()` reads host-side files.
 
@@ -217,8 +219,9 @@ Host ~/.claude/settings.json (MCP servers)
   v
 readHostMcpServers()  [reads 4 config sources, filters built-ins]
   |
-  +---> extractHttpMcpServers()  [external servers WITH explicit auth headers]
-  |       |
+  +---> extractHttpMcpServers()  [external HTTP servers, header-auth AND OAuth]
+  |       |                       [header-auth: { url, headers }]
+  |       |                       [OAuth:       { url, oauth: true }]
   |       v
   |     moat.mjs writes ~/.moat/data/mcp-servers.json
   |       |
@@ -229,14 +232,17 @@ readHostMcpServers()  [reads 4 config sources, filters built-ins]
   |     container settings.json: url -> http://host.docker.internal:9876/mcp/{name}
   |       |
   |       v
-  |     Claude makes HTTP request -> proxy injects auth headers -> upstream
+  |     Claude makes HTTP request -> proxy injects auth -> upstream
+  |       (header-auth: headers from config; OAuth: access token from Keychain)
   |
   +---> extractMcpDomains()  [external hostnames -> squid whitelist]
+  |       (not strictly required for proxied MCPs — container reaches upstream
+  |        via host.docker.internal only — but still emitted for defense in depth)
   |
   +---> copyMcpServers()  [ALL servers -> container settings.json]
           |
-          +-- HTTP (proxied): rewrite URL + inject proxy Bearer token
-          +-- HTTP (not proxied): rewrite URL + strip auth headers
+          +-- HTTP (proxied, header-auth or OAuth): rewrite URL + inject moat-shared-secret Bearer token
+          +-- HTTP (localhost or not proxied): rewrite URL + strip auth headers
           +-- stdio: forward only if command in KNOWN_CONTAINER_COMMANDS
           |
           v
@@ -250,8 +256,8 @@ readHostMcpServers()  [reads 4 config sources, filters built-ins]
 |------|------|
 | `lib/mcp-servers.mjs` | Read host MCP configs, filter, rewrite, write into container |
 | `moat.mjs` | Orchestrator — reads configs, writes proxy file, starts container, calls copyMcpServers |
-| `tool-proxy.mjs` | HTTP reverse proxy on host; injects auth headers for proxied MCP servers |
-| `squid.conf` | Outbound proxy in container; must whitelist MCP server domains |
+| `tool-proxy.mjs` | HTTP reverse proxy on host; injects auth for proxied MCP servers (static headers from config, or OAuth access token read from the host Keychain) |
+| `squid.conf` | Outbound proxy in container; proxied MCPs only require `host.docker.internal` |
 | `docker-compose.yml` | Container definition; `moat-config` volume holds `/home/node/.claude` |
 | `Dockerfile` | Image build — sets up initial settings.json with ide-tools, ide-lsp (line 136) |
 | `lib/exec.mjs` | `runCapture` — spawns child processes, throws on non-zero exit |
@@ -269,9 +275,9 @@ readHostMcpServers()  [reads 4 config sources, filters built-ins]
 
 | Server Type | Has Auth Headers? | Localhost? | Result |
 |---|---|---|---|
-| HTTP/URL | Yes | No | Proxied through tool-proxy (auth stays on host) |
+| HTTP/URL | Yes | No | Proxied through tool-proxy (headers injected from host config) |
 | HTTP/URL | Yes | Yes | Skipped from proxy; forwarded directly with localhost rewrite |
-| HTTP/URL | No (OAuth) | No | Not proxied; forwarded directly (domain must be in squid whitelist) |
+| HTTP/URL | No (OAuth) | No | Proxied through tool-proxy; access token read from host Keychain per request (since PR #58) |
 | HTTP/URL | No (OAuth) | Yes | Forwarded directly with localhost rewrite |
 | stdio | N/A | N/A | Forwarded if command in KNOWN_CONTAINER_COMMANDS; skipped otherwise |
 
@@ -317,6 +323,6 @@ To verify the fix works:
 ## Remaining Considerations
 
 - **KNOWN_CONTAINER_COMMANDS is a static allowlist.** Custom stdio commands (e.g. `go`, `ruby`) won't forward. This is by design but may surprise users.
-- **Squid domain whitelist** — external MCP server domains must be whitelisted in `squid.conf` or `.moat.yml` `domains:` for direct (non-proxied) connections to work.
+- **Squid domain whitelist** — no longer required for external MCP servers proxied through tool-proxy (since PR #58, this covers both header-auth and OAuth MCPs). The container reaches tool-proxy via `host.docker.internal` only, and tool-proxy contacts the upstream from the host.
 - **Docker named volume** (`moat-config`) persists across container recreations. The jq cleanup handles this, but if the volume is manually recreated it resets to clean state anyway.
 - **Global volume sharing** — `moat-config` is shared across all workspaces. Running moat for different workspaces with different MCP servers will overwrite each other's config.

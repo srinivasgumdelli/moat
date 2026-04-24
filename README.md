@@ -119,6 +119,7 @@ See [docs/usage.md](docs/usage.md) for the full usage guide.
 | No external DNS | DNS-based exfiltration |
 | Tool proxy allowlists | Destructive terraform/kubectl/aws commands |
 | Credential isolation | Cloud creds entering the container |
+| MCP credential isolation | MCP auth tokens (static headers, OAuth access tokens) entering the container |
 | Bearer token auth | Unauthorized proxy access |
 | Proxy binds 127.0.0.1 | Network-level proxy access |
 | Non-root user | Privilege escalation |
@@ -138,6 +139,7 @@ Moat is designed to be **fail-closed** — if a process ignores proxy settings o
 - Using cloud credentials to mutate infrastructure (terraform apply, kubectl delete, aws create-*)
 - Accessing cloud credentials directly (they never enter the container)
 - Reaching arbitrary internet endpoints
+- MCP auth tokens entering the container (static headers stay on host disk, OAuth access tokens stay in the host Keychain)
 
 **What Moat does NOT prevent:**
 - Reading and writing files in your mounted workspace (`~/Repos` or whatever you mount)
@@ -224,6 +226,22 @@ Language servers (`typescript-language-server`, `pyright`, `gopls`) start lazily
 **kubectl** (read-only): `get`, `describe`, `logs`, `top`, `diff`, `explain` are allowed. `apply`, `delete`, `create`, `exec`, `patch` are blocked.
 
 **AWS CLI** (read-only): Actions starting with `describe`, `list`, `get` are allowed. Actions starting with `create`, `delete`, `terminate`, `put`, `update`, `run` are blocked.
+
+## MCP servers
+
+Moat forwards host-configured MCP servers into the container, but MCP auth credentials never enter the container. There are four handling paths:
+
+**Static-header MCPs** (HTTP servers configured with explicit `headers:` in `~/.claude.json`): the URL is rewritten to `http://host.docker.internal:<proxy-port>/mcp/<name>` and the container authenticates to tool-proxy with the moat shared-secret bearer token. Tool-proxy reads the real `headers:` from `~/.moat/data/mcp-servers.json` on each request and injects them into the upstream call.
+
+**OAuth MCPs** (HTTP servers without `headers:`, e.g. `datadog-mcp`): same proxy path, but tool-proxy reads the access token from the host macOS Keychain at request time (exactly one Keychain item: `Claude Code-credentials`, the same one Claude Code itself uses). Tokens are refreshed on the host via OAuth 2.1 `refresh_token` grant, single-flighted per server, and written back to the Keychain. A 401 from the upstream triggers one force-refresh and retry.
+
+**Claude AI cloud connectors** (Atlassian, Google Drive, Google Calendar, Supermetrics, etc., registered on claude.ai): not in `mcpServers` config at all. Claude Code inside the container authenticates via the forwarded `claudeAiOauth` session. These sit outside moat's MCP forwarding path.
+
+**stdio MCPs**: forwarded into the container only if the `command` is in `KNOWN_CONTAINER_COMMANDS` (`node`, `npx`, `python3`, `uvx`, `bun`, etc.). stdio servers that rely on host-only binaries are skipped.
+
+All proxied MCPs are subject to the read-only gate — `tools/call` requests for write-pattern tool names are blocked by tool-proxy. Controlled by `_readOnly` in `~/.moat/data/mcp-servers.json` (default true). Pass `--mcp-rw` to `moat` to opt out.
+
+Because proxied MCPs always go through `host.docker.internal`, the upstream MCP host (e.g. `mcp.datadoghq.com`, `paxos-be.glean.com`) does not need to be in the squid allowlist. The container only reaches tool-proxy, and tool-proxy reaches the upstream from the host.
 
 ## Secrets scanning
 

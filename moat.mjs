@@ -381,11 +381,16 @@ if (!existsSync(join(workspace, '.moat.yml'))) {
   await initConfig(workspace, { auto: true });
 }
 
-// Read host MCP servers early — domains go into squid before container starts
+// Read host MCP servers early — domains go into squid before container starts.
+// Proxied HTTP MCPs (header-auth and OAuth) don't strictly need these domains
+// in squid (the container only talks to host.docker.internal for those), but
+// we still emit them for defense in depth and for any direct stdio/SSE cases.
 const hostMcpServers = readHostMcpServers(runtime);
 const mcpDomains = extractMcpDomains(hostMcpServers);
 
-// Extract external HTTP MCP servers to proxy through tool-proxy (auth stays on host)
+// Extract external HTTP MCP servers to proxy through tool-proxy.
+// Auth never enters the container: static headers come from host config,
+// OAuth access tokens are read from the host Keychain per request.
 const httpMcpServers = extractHttpMcpServers(hostMcpServers);
 // Always write mcp-servers.json (even empty) to clear stale configs from previous runs.
 // MCPs are read-only by default; pass --mcp-rw to allow write operations.
