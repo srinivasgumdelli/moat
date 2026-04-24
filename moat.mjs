@@ -201,6 +201,7 @@ if (subcommand === 'sync-skills') {
   const { findContainer, findMoatContainers } = await import('./lib/container.mjs');
   const { copySkills, copyCommands } = await import('./lib/skills.mjs');
   const { copyPlugins } = await import('./lib/plugins.mjs');
+  const { copySettings } = await import('./lib/settings.mjs');
   const { createInterface } = await import('node:readline');
 
   let containerName = await findContainer(workspace);
@@ -236,6 +237,7 @@ if (subcommand === 'sync-skills') {
   await copySkills(containerName);
   await copyCommands(containerName);
   await copyPlugins(containerName, containerWorkspace);
+  await copySettings(containerName);
   process.exit(0);
 }
 
