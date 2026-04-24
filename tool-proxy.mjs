@@ -191,6 +191,7 @@ const AWS_BLOCKED_ACTIONS = new Set([
 const MCP_READ_VERBS = new Set([
   'get', 'list', 'read', 'search', 'find', 'fetch', 'describe',
   'show', 'view', 'lookup', 'check', 'query', 'count', 'info',
+  'aggregate', 'analyze',
 ]);
 
 // Tools allowed regardless of verb pattern (auth flows and other safe non-verb-named tools)
