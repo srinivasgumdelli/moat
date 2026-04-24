@@ -221,6 +221,7 @@ Single-file Node.js server with zero dependencies (uses `node:http`, `node:child
   - `POST /terraform` — bearer auth, plan-only allowlist enforcement
   - `POST /kubectl` — bearer auth, read-only allowlist enforcement
   - `POST /aws` — bearer auth, read-only verb filtering
+  - `/mcp/<name>` — bearer auth, reverse-proxy for forwarded MCP servers. Injects upstream auth (static headers from `~/.moat/data/mcp-servers.json`, or OAuth access token read from the host Keychain per request). Enforces the MCP read-only gate. See [MCP server forwarding](#mcp-server-forwarding).
   - `POST /agent/spawn` — body `{ prompt, name?, workspace_hash }`, spawns agent container, returns `{ id, name }`
   - `GET /agent/list?workspace_hash=<hash>` — lists agents with reconciled Docker status
   - `GET /agent/log/<id>?workspace_hash=<hash>` — returns `docker logs` output
@@ -246,6 +247,43 @@ Installed at `/usr/local/bin/gh`:
 - All `gh` commands are proxied (no dual-path like git)
 - Sends current working directory so proxy can translate for repo detection (`gh repo view`, `gh pr list`)
 - Same transport and error handling as the git wrapper
+
+## MCP server forwarding
+
+Moat forwards host-configured MCP servers into the container. MCP auth credentials stay on the host — the container only holds the moat shared-secret used to talk to tool-proxy.
+
+### Trust boundary
+
+1. **Container holds**: the moat shared-secret bearer token (baked into the image at `/etc/tool-proxy-token`). Nothing else. No `headers:` from `~/.claude.json`. No Keychain access. No OAuth refresh tokens.
+2. **tool-proxy (host) holds**: `~/.moat/data/mcp-servers.json` (server URLs plus static `headers:` for header-auth MCPs) and read access to exactly one Keychain item, `Claude Code-credentials` (the same one Claude Code itself uses). It cannot read the full Keychain.
+3. **Upstream MCP hosts** (e.g. `mcp.datadoghq.com`, `paxos-be.glean.com`) are contacted from the host-side proxy. The container never connects to them directly, so those hostnames do not need to be in the squid allowlist.
+
+### Four MCP handling paths
+
+| Host config shape | Handling |
+|---|---|
+| HTTP `url` + static `headers:` | Proxied through tool-proxy; headers injected from `~/.moat/data/mcp-servers.json` |
+| HTTP `url` without `headers:` (OAuth) | Proxied through tool-proxy; access token read from host Keychain per request |
+| Claude.ai cloud connectors (Atlassian, Google Drive, Google Calendar, Supermetrics, etc.) | Not in `mcpServers` config; Claude Code in the container authenticates via forwarded `claudeAiOauth` session. Out of moat's MCP forwarding path. |
+| stdio `command: ...` | Forwarded if `command` is in `KNOWN_CONTAINER_COMMANDS` (`node`, `npx`, `python3`, `uvx`, `bun`, etc.); skipped otherwise |
+
+For proxied MCPs, `copyMcpServers` rewrites the container-side `mcpServers` entry so the URL becomes `http://host.docker.internal:9876/mcp/<name>` with `Authorization: Bearer <moat-shared-secret>`. The container reaches tool-proxy through squid (which only needs to whitelist `host.docker.internal`).
+
+### OAuth token refresh
+
+For OAuth MCPs (`{ oauth: true }` in `mcp-servers.json`), tool-proxy:
+
+1. Reads the `Claude Code-credentials` Keychain item (`security find-generic-password -l ...`) at request time. Result is cached in-process for 60s.
+2. Finds the matching entry under `mcpOAuth.<serverName>|...`.
+3. If `expiresAt` is within the 60s refresh buffer, runs an OAuth 2.1 `refresh_token` grant against the server's discovered `token_endpoint` (`/.well-known/oauth-authorization-server`). Refreshes are single-flighted per server to coalesce concurrent requests.
+4. Writes the rotated token back to the Keychain with `security add-generic-password -U` so the host Claude Code session and tool-proxy stay in sync.
+5. On a 401 from the upstream, force-refreshes once and retries. Further 401s are returned to the container as-is.
+
+If the Keychain is missing an entry for a server, tool-proxy returns a 401 with a message telling the user to re-authenticate via host Claude Code.
+
+### Read-only enforcement
+
+The existing MCP read-only gate applies to all proxied MCPs, header-auth and OAuth alike. Before forwarding a `tools/call` request, tool-proxy inspects `params.name` and blocks it if the tool name matches a write pattern. Controlled by `_readOnly` in `~/.moat/data/mcp-servers.json` (default true). Per-server `readOnly` override is respected. Launch `moat --mcp-rw` to disable the gate for a session.
 
 ## Usage
 

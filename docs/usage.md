@@ -533,9 +533,24 @@ Note: `podman-compose` handles most compose features but may differ from Docker 
 
 **Podman-compose compatibility.** `podman-compose` handles most docker-compose.yml features but isn't 100% identical to Docker Compose. Complex compose features (deploy, configs, secrets) may behave differently.
 
+### External MCP servers
+
+Any MCP server configured on the host (in `~/.claude.json` or `~/.claude/settings.json`) is forwarded into the container. Credentials never enter the container — tool-proxy on the host injects auth on each request.
+
+Four handling paths:
+
+- **Static-header MCPs** (explicit `headers:` on the server config): headers are read from `~/.moat/data/mcp-servers.json` on the host and injected into the upstream request. The container only sees `http://host.docker.internal:9876/mcp/<name>`.
+- **OAuth MCPs** (no `headers:`, e.g. `datadog-mcp`): tool-proxy reads the access token from the macOS Keychain item `Claude Code-credentials` per request. Refresh happens on the host via OAuth 2.1 `refresh_token` grant, single-flighted per server, and writes rotated tokens back to the Keychain.
+- **Claude.ai cloud connectors** (Atlassian, Google Drive, Google Calendar, Supermetrics, etc., registered on claude.ai): not in `mcpServers` config. Claude Code inside the container authenticates via the forwarded `claudeAiOauth` session. Out of moat's forwarding path.
+- **stdio MCPs**: forwarded only if the `command` is in `KNOWN_CONTAINER_COMMANDS` (`node`, `npx`, `python3`, `uvx`, `bun`, etc.). Servers relying on host-only binaries are skipped with a log line.
+
+All proxied MCPs are read-only by default. `tools/call` requests for write-pattern tool names are blocked by tool-proxy with a JSON-RPC error. Pass `--mcp-rw` to `moat` to opt out for the session.
+
+Because proxied MCPs go through `host.docker.internal`, upstream MCP hostnames (e.g. `mcp.datadoghq.com`) do not need to be in the squid allowlist. Only `host.docker.internal` does, and that is in the base whitelist.
+
 ### IDE tools
 
-Claude has access to two MCP servers inside the container:
+Claude has access to two built-in MCP servers inside the container:
 
 **ide-tools** — diagnostics and testing:
 - `run_diagnostics` — full type-check/lint (tsc, pyright, golangci-lint)
