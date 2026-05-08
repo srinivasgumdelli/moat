@@ -1,4 +1,4 @@
-ARG GO_VERSION=1.26.1
+ARG GO_VERSION=1.26.3
 FROM golang:${GO_VERSION} AS go-sdk
 
 FROM node:22
@@ -141,8 +141,7 @@ RUN if [ "$RUNTIME" = "claude" ]; then \
 # Install TypeScript/Go language tools and MCP dependencies
 RUN npm install -g typescript typescript-language-server @modelcontextprotocol/sdk vscode-languageserver-protocol vscode-jsonrpc && \
     GOPATH=/home/node/go go install golang.org/x/tools/gopls@latest && \
-    curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | \
-      sh -s -- -b /home/node/go/bin
+    GOPATH=/home/node/go go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
 
 # Nudge — just-in-time rule enforcement hooks for Claude Code (attunehq/nudge)
 RUN curl -sSfL https://raw.githubusercontent.com/attunehq/nudge/main/scripts/install.sh | bash
