@@ -622,7 +622,7 @@ if (runtime.configDir === '.claude') {
   const proxyToken = existsSync(tokenPath) ? readFileSync(tokenPath, 'utf-8').trim() : null;
   const proxiedServerNames = new Set(Object.keys(httpMcpServers));
   await copyMcpServers(containerName, hostMcpServers, { proxyToken, proxiedServers: proxiedServerNames });
-  // Copy host settings.local.json (carries nudge hooks and other local overrides)
+  // Copy host settings.local.json (carries user-level hooks and other local overrides)
   await copySettingsLocal(containerName);
   // Force permissions.defaultMode in settings.json so it takes effect even if the CLI flag is ignored
   await writeContainerSettings(containerName, { permissions: { defaultMode: 'bypassPermissions' } });
