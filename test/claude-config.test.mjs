@@ -45,20 +45,37 @@ test('readHostModel returns null when no model is configured', () => {
   }
 });
 
-test('readHostAgentSettings keeps only headless-relevant keys', () => {
+test('readHostAgentSettings forwards full host settings minus moat-managed keys', () => {
   const home = makeHome({
     model: 'claude-fable-5[1m]',
     alwaysThinkingEnabled: true,
     effortLevel: 'high',
+    editorMode: 'vim',
     hooks: { Stop: [{ command: '/Users/someone/.claude/hook.sh' }] },
-    statusLine: { command: '/Users/someone/.claude/statusline.sh' },
     permissions: { defaultMode: 'plan' },
+    mcpServers: { example: {} },
+    $schema: 'https://example.invalid/schema.json',
   });
   try {
     assert.deepEqual(readHostAgentSettings(home), {
       model: 'claude-fable-5[1m]',
       alwaysThinkingEnabled: true,
       effortLevel: 'high',
+      editorMode: 'vim',
+    });
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('readHostAgentSettings rewrites statusline paths to container paths', () => {
+  const home = makeHome({});
+  try {
+    writeFileSync(join(home, '.claude', 'settings.json'), JSON.stringify({
+      statusLine: { type: 'command', command: join(home, '.claude', 'statusline.sh') },
+    }));
+    assert.deepEqual(readHostAgentSettings(home), {
+      statusLine: { type: 'command', command: '/home/node/.claude/statusline.sh' },
     });
   } finally {
     rmSync(home, { recursive: true, force: true });
@@ -66,7 +83,7 @@ test('readHostAgentSettings keeps only headless-relevant keys', () => {
 });
 
 test('readHostAgentSettings returns {} when nothing applies', () => {
-  const home = makeHome({ editorMode: 'vim' });
+  const home = makeHome({ hooks: {} });
   try {
     assert.deepEqual(readHostAgentSettings(home), {});
   } finally {
