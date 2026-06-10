@@ -67,6 +67,25 @@ moat attach-dir ~/Projects/shared-lib       # live-sync a dir into a running ses
 moat detach-dir shared-lib                  # stop syncing
 ```
 
+**Sessions** — every `moat` launch gets its own container, so several agents can
+work on the same workspace concurrently, each with its own CPU/memory limits.
+The workspace directory is mounted in all of them (use worktrees for file-level
+isolation). If sessions are already running, `moat` shows a picker to reattach
+or start a new one.
+
+```bash
+moat ~/Projects/myapp                     # new session (random ID, e.g. a3f2)
+moat ~/Projects/myapp --name session1     # named session — reuses the same container
+moat attach --name session1               # reconnect to a running named session
+moat ps                                   # list sessions (name, uptime, cpu/mem)
+moat down                                 # stop a session for this workspace (picker)
+moat down --name session1                 # stop a named session
+moat down --all                           # stop all sessions for this workspace
+```
+
+Conversation history is stored per workspace, so `moat --resume` / `--continue`
+work from any session, including after a session's container is gone.
+
 **Dispatch mode** — hand off a task to a sandboxed agent without staying in an interactive session:
 
 ```bash
