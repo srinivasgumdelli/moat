@@ -335,7 +335,7 @@ moat update
 
 ### Teardown
 
-Automatic on exit. The `teardown()` function in `lib/container.mjs` first stops all agent containers for the workspace (by Docker label `moat.workspace_hash`), then tears down the compose project. `moat down --all` removes all `moat-*` containers including agents.
+Automatic on exit. `teardownSession()` in `lib/container.mjs` stops the session's agent containers (by Docker label `moat.workspace_hash=<session-id>`), then tears down the session's compose project. The per-workspace config volume is kept so `--continue`/`--resume` history survives. `moat down --all` removes all sessions for the current workspace; `moat down '*'` matches every session in any workspace.
 
 ### Rebuild (after config changes)
 
