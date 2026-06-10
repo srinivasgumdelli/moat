@@ -21,7 +21,8 @@ fi
 
 usage() {
   cat <<'EOF'
-Usage: agent [--name <name>] <prompt>       Spawn a background agent
+Usage: agent [--name <name>] [--model <model>] <prompt>
+                                            Spawn a background agent
        agent list                           Show all agents
        agent log <id>                       Show agent output
        agent kill <id|--all>                Terminate agent(s)
@@ -63,11 +64,16 @@ check_response() {
 
 cmd_run() {
   local name=""
+  local model=""
   local -a words=()
   while [ $# -gt 0 ]; do
     case "$1" in
       --name)
         name="$2"
+        shift 2
+        ;;
+      --model)
+        model="$2"
         shift 2
         ;;
       *)
@@ -79,18 +85,15 @@ cmd_run() {
 
   local prompt="${words[*]}"
   if [ -z "$prompt" ]; then
-    echo "Usage: agent [--name <name>] <prompt>" >&2
+    echo "Usage: agent [--name <name>] [--model <model>] <prompt>" >&2
     exit 1
   fi
 
   local payload
-  if [ -n "$name" ]; then
-    payload=$(jq -n --arg prompt "$prompt" --arg name "$name" --arg hash "$WS_HASH" \
-      '{prompt: $prompt, name: $name, workspace_hash: $hash}')
-  else
-    payload=$(jq -n --arg prompt "$prompt" --arg hash "$WS_HASH" \
-      '{prompt: $prompt, workspace_hash: $hash}')
-  fi
+  payload=$(jq -n --arg prompt "$prompt" --arg name "$name" --arg model "$model" --arg hash "$WS_HASH" \
+    '{prompt: $prompt, workspace_hash: $hash}
+     + (if $name != "" then {name: $name} else {} end)
+     + (if $model != "" then {model: $model} else {} end)')
 
   local response
   response=$(api_post "/agent/spawn" "$payload")
