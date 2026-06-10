@@ -12,6 +12,7 @@ import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { scanForSecrets, isBlockingMode, loadCustomPatterns } from './lib/secrets.mjs';
+import { readHostAgentSettings } from './lib/claude-config.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = parseInt(process.env.TOOL_PROXY_PORT || '9876');
@@ -1198,6 +1199,20 @@ const server = http.createServer(async (req, res) => {
       const envFile = join(tmpdir(), `moat-agent-${id}.env`);
       writeFileSync(envFile, `${apiKeyEnv}=${apiKey}\n`, { mode: 0o600 });
 
+      // Agents get the host's Claude settings (model, thinking, effort) so they
+      // don't fall back to Claude's built-in defaults. The file lives in the
+      // agent's data dir (cleaned up with the agent) and is bind-mounted over
+      // the tmpfs .claude dir. An explicit body.model still wins via --model.
+      const agentSettings = readHostAgentSettings();
+      if (body.model) agentSettings.model = body.model;
+      const settingsMountArgs = [];
+      if (Object.keys(agentSettings).length > 0) {
+        const settingsFile = join(WORKSPACES_DIR, wsHash, 'agents', id, 'settings.json');
+        mkdirSync(dirname(settingsFile), { recursive: true });
+        writeFileSync(settingsFile, JSON.stringify(agentSettings, null, 2) + '\n');
+        settingsMountArgs.push('--mount', `type=bind,src=${settingsFile},dst=/home/node/.claude/settings.json,readonly`);
+      }
+
       // Writable dispatch agents use a dedicated worktree; read-only agents use the live workspace
       const writable = !!body.writable;
       const mountSrc = writable && body.worktree_path ? body.worktree_path : hostWorkspace;
@@ -1230,6 +1245,7 @@ const server = http.createServer(async (req, res) => {
         // Give each agent a writable in-memory .claude dir so Claude Code can
         // create worktrees and session data without hitting a missing/read-only dir.
         '--tmpfs', '/home/node/.claude:rw,size=100m,uid=1000,gid=1000',
+        ...settingsMountArgs,
         agentImageName,
       ];
 
