@@ -11,7 +11,7 @@ import { execSync, spawnSync } from 'node:child_process';
 import { parseArgs } from './lib/cli.mjs';
 import { log, err, DIM, RESET } from './lib/colors.mjs';
 import { generateProjectConfig, generateExtraDirsYaml } from './lib/compose.mjs';
-import { findContainer, mountsMatch, teardown, startContainer, execRuntime, isContainerRunning } from './lib/container.mjs';
+import { findSessionContainer, findMoatContainers, mountsMatch, teardownSession, startContainer, execRuntime, isContainerRunning } from './lib/container.mjs';
 import { startProxy, stopProxy } from './lib/proxy.mjs';
 import { doctor } from './lib/doctor.mjs';
 import { update } from './lib/update.mjs';
@@ -20,7 +20,8 @@ import { attach, detach } from './lib/attach.mjs';
 import { copyInstructions } from './lib/instructions.mjs';
 import { refreshHooks } from './lib/hooks.mjs';
 import { readHostMcpServers, extractMcpDomains, extractHttpMcpServers, copyMcpServers, writeContainerSettings, copySettingsLocal } from './lib/mcp-servers.mjs';
-import { workspaceId, workspaceDataDir } from './lib/workspace-id.mjs';
+import { workspaceId, workspaceDataDir, sessionId, randomSessionSuffix, sanitizeSessionName } from './lib/workspace-id.mjs';
+import { selectFromList } from './lib/select.mjs';
 import { createAuditLogger } from './lib/audit.mjs';
 import { getRuntime, resolveRuntimeName } from './lib/runtimes/index.mjs';
 import { syncMemoryToHost } from './lib/memory.mjs';
@@ -49,8 +50,9 @@ try {
   process.exit(1);
 }
 
-let { subcommand, subcommandArgs, workspace, extraDirs, claudeArgs, runtimeArg, mcpRw } = parsed;
+let { subcommand, subcommandArgs, workspace, extraDirs, claudeArgs, runtimeArg, mcpRw, sessionName } = parsed;
 let dispatchOpts = null; // set when subcommand === 'dispatch'
+let attachMode = false;  // set when subcommand === 'attach' or a running session is picked
 
 // --- Handle uninstall early ---
 if (subcommand === 'uninstall') {
@@ -103,8 +105,13 @@ ${BOLD}USAGE${RESET}
 
 ${BOLD}OPTIONS${RESET}
   --runtime <name>    Runtime to use (${runtimes}) ${DIM}[default: claude]${RESET}
+  --name <label>      Stable session name (reuse/reconnect the same container)
   --add-dir <path>    Mount additional directory into the container (repeatable)
   --help, -h          Show this help message
+
+${BOLD}SESSIONS${RESET}
+  Every launch starts its own container. If sessions are already running for
+  the workspace, moat shows a picker to reattach or start a new one.
 
 ${BOLD}COMMANDS${RESET}
   ${CYAN}dispatch${RESET} [workspace] ["task"]  Run a task autonomously (interactive if no task given)
@@ -115,9 +122,11 @@ ${BOLD}COMMANDS${RESET}
   ${CYAN}doctor${RESET}              Check system prerequisites and configuration
   ${CYAN}update${RESET}              Update moat to the latest version
     --version X.Y.Z   Pin to a specific version
-  ${CYAN}ps${RESET}                  List running moat containers
-  ${CYAN}down${RESET}                Stop and remove containers
-    --all             Stop all moat containers
+  ${CYAN}attach${RESET} --name <label> [workspace]  Reconnect to a running named session
+  ${CYAN}ps${RESET}                  List running moat sessions (name, uptime, cpu/mem)
+  ${CYAN}down${RESET} [pattern]      Stop sessions for this workspace (picker if several)
+    --name <label>    Stop a specific named session
+    --all             Stop all sessions for the workspace
   ${CYAN}stop${RESET}                Stop the tool proxy
   ${CYAN}attach-dir${RESET} <dir>    Mount an additional directory to a running container
   ${CYAN}detach-dir${RESET} <dir|--all>  Unmount a previously attached directory
@@ -133,14 +142,15 @@ ${BOLD}COMMANDS${RESET}
   ${CYAN}uninstall${RESET}           Remove moat and all its data
 
 ${BOLD}EXAMPLES${RESET}
-  moat                                      ${DIM}# Launch in current directory${RESET}
-  moat ~/projects/myapp                     ${DIM}# Launch with a specific workspace${RESET}
+  moat                                      ${DIM}# New session in current directory${RESET}
+  moat ~/projects/myapp --name app0         ${DIM}# Named session (reusable)${RESET}
+  moat attach --name app0 ~/projects/myapp  ${DIM}# Reconnect to it${RESET}
   moat dispatch ~/app "add a README"        ${DIM}# Dispatch task to Claude Code${RESET}
   moat dispatch ~/app "fix bug" --headless  ${DIM}# Headless agent, no reasoning layer${RESET}
   moat --runtime codex                      ${DIM}# Use Codex runtime${RESET}
   moat --add-dir ~/shared-libs              ${DIM}# Mount extra directory${RESET}
   moat doctor                               ${DIM}# Check prerequisites${RESET}
-  moat down --all                           ${DIM}# Stop all containers${RESET}
+  moat down --all                           ${DIM}# Stop all sessions for this workspace${RESET}
 `);
   process.exit(0);
 }
@@ -174,9 +184,11 @@ if (subcommand === 'log') {
 
 if (subcommand === 'down') {
   const allFlag = subcommandArgs.includes('--all');
-  // First non-flag arg is a pattern (e.g. moat down myapp, moat down moat-abc*)
-  const pattern = subcommandArgs.find(a => a !== '--all' && !a.startsWith('-'));
-  await down(REPO_DIR, { all: allFlag, workspace, pattern });
+  const nameIdx = subcommandArgs.indexOf('--name');
+  const nameArg = nameIdx !== -1 ? subcommandArgs[nameIdx + 1] : null;
+  // First non-flag arg that isn't the --name value is a pattern (e.g. moat down myapp)
+  const pattern = subcommandArgs.find((a, i) => a !== '--all' && !a.startsWith('-') && i !== nameIdx + 1);
+  await down(REPO_DIR, { all: allFlag, workspace, pattern, name: nameArg });
   process.exit(0);
 }
 
@@ -198,17 +210,18 @@ if (subcommand === 'detach-dir') {
 }
 
 if (subcommand === 'sync-skills') {
-  const { findContainer, findMoatContainers } = await import('./lib/container.mjs');
   const { copySkills, copyCommands } = await import('./lib/skills.mjs');
   const { copyPlugins } = await import('./lib/plugins.mjs');
   const { copyStatusline } = await import('./lib/statusline.mjs');
   const { copySettings } = await import('./lib/settings.mjs');
   const { createInterface } = await import('node:readline');
 
-  let containerName = await findContainer(workspace);
+  const all = await findMoatContainers();
+  const forWorkspace = all.filter(c => c.workspace === workspace);
+  let containerName = forWorkspace.length === 1 ? forWorkspace[0].name : null;
   let containerWorkspace = workspace;
   if (!containerName) {
-    const running = await findMoatContainers();
+    const running = forWorkspace.length > 0 ? forWorkspace : all;
     if (running.length === 0) {
       err("No running moat container. Start a session first with 'moat'.");
       process.exit(1);
@@ -217,13 +230,13 @@ if (subcommand === 'sync-skills') {
       containerName = running[0].name;
       containerWorkspace = running[0].workspace;
     } else {
-      log('Multiple moat containers running. Which workspace?');
+      log('Multiple moat sessions running. Which one?');
       for (let i = 0; i < running.length; i++) {
-        console.log(`  \x1b[1m${i + 1}\x1b[0m) ${running[i].workspace}`);
+        console.log(`  \x1b[1m${i + 1}\x1b[0m) ${running[i].workspace}${running[i].session ? `  (${running[i].session})` : ''}`);
       }
       const rl = createInterface({ input: process.stdin, output: process.stdout });
       const answer = await new Promise((res) => {
-        rl.question(`\n  ? Select workspace [1-${running.length}] `, (a) => { rl.close(); res(a); });
+        rl.question(`\n  ? Select session [1-${running.length}] `, (a) => { rl.close(); res(a); });
       });
       const idx = parseInt(answer, 10) - 1;
       if (isNaN(idx) || idx < 0 || idx >= running.length) {
@@ -329,6 +342,31 @@ if (subcommand === 'dispatch') {
   }
 }
 
+if (subcommand === 'attach') {
+  // moat attach --name <label> [workspace] [claude args...]
+  const { statSync: _statSync } = await import('node:fs');
+  const { resolve: _resolve } = await import('node:path');
+  const passthrough = [];
+  for (let i = 0; i < subcommandArgs.length; i++) {
+    const a = subcommandArgs[i];
+    if (a === '--name') {
+      i++;
+      sessionName = subcommandArgs[i] || null;
+    } else if (!a.startsWith('-') && existsSync(a) && _statSync(a).isDirectory()) {
+      workspace = _resolve(a);
+    } else {
+      passthrough.push(a);
+    }
+  }
+  if (!sessionName) {
+    err('Usage: moat attach --name <label> [workspace]');
+    process.exit(1);
+  }
+  claudeArgs = passthrough;
+  attachMode = true;
+  subcommand = null; // fall through to main flow
+}
+
 // --- Main flow ---
 
 // Compute moat version from git (short SHA + dirty flag)
@@ -351,11 +389,52 @@ try {
 
 process.env.MOAT_WORKSPACE = workspace;
 
-// Compute per-workspace data directory
-const hash = workspaceId(workspace);
+// Compute per-session identity: <wsHash8>-<suffix>
+// The full session ID names the data dir and compose project, and is passed to
+// the tool-proxy as MOAT_WORKSPACE_HASH so path mappings, audit logs, and
+// agents are all scoped per session.
+const wsHash = workspaceId(workspace);
+
+// Interactive session picker: if sessions are already running for this
+// workspace, offer to reattach instead of silently starting another container.
+if (!sessionName && !attachMode && !dispatchOpts && process.stdin.isTTY) {
+  const runningSessions = (await findMoatContainers())
+    .filter(c => c.workspace === workspace && c.session);
+  if (runningSessions.length > 0) {
+    const labels = runningSessions.map(c => `${c.session}  ${DIM}${c.name}${RESET}`);
+    const choice = await selectFromList(labels, {
+      title: `Sessions running for ${workspace}:`,
+      extraOption: '[ start a new session ]',
+    });
+    if (choice === null) process.exit(0); // user cancelled
+    if (choice >= 0) {
+      sessionName = runningSessions[choice].session;
+      attachMode = true;
+    }
+  }
+}
+
+let sessionSuffix;
+if (sessionName) {
+  try {
+    sessionSuffix = sanitizeSessionName(sessionName);
+  } catch (e) {
+    err(e.message);
+    process.exit(1);
+  }
+} else {
+  // Random suffix; retry on the unlikely collision with a running session
+  do {
+    sessionSuffix = randomSessionSuffix();
+  } while (await findSessionContainer(`moat-${wsHash}-${sessionSuffix}`));
+}
+const hash = sessionId(workspace, sessionSuffix);
 const wsDir = workspaceDataDir(hash);
 mkdirSync(wsDir, { recursive: true });
-const configVolume = `moat-config-${hash}`;
+// Config volume is per-workspace (shared across sessions) so --continue/--resume
+// history survives session teardown and is visible from any session.
+const configVolume = `moat-config-${wsHash}`;
+log(`Session ${DIM}${sessionSuffix}${RESET}`);
 
 // Create audit logger for this session
 const audit = createAuditLogger(wsDir);
@@ -364,7 +443,7 @@ let headSha = null;
 try {
   headSha = execSync('git rev-parse HEAD', { cwd: workspace, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 } catch {}
-audit.emit('session.start', { workspace, hash, moat_version: moatVersion, runtime: runtimeName, head_sha: headSha });
+audit.emit('session.start', { workspace, hash, workspace_hash: wsHash, session: sessionSuffix, moat_version: moatVersion, runtime: runtimeName, head_sha: headSha });
 
 // Legacy migration: tear down old single-instance container
 if (await isContainerRunning('moat-devcontainer-1')) {
@@ -561,17 +640,23 @@ for (const vol of ['moat-bashhistory', configVolume]) {
   catch { execSync(`docker volume create ${vol}`, { stdio: 'pipe' }); }
 }
 
-// Per-workspace compose project name — isolates concurrent sessions
+// Per-session compose project name — isolates concurrent sessions
 const projectName = `moat-${hash}`;
 
-// Start or reuse container
-const existing = await findContainer(workspace);
+// Start or reuse container (reuse only happens for named sessions / attach;
+// unnamed sessions always get a fresh suffix, hence a fresh container)
+const existing = await findSessionContainer(projectName);
+if (attachMode && !existing) {
+  err(`No running session named '${sessionSuffix}' for this workspace.`);
+  err(`Start one with: moat ${workspace} --name ${sessionSuffix}`);
+  process.exit(1);
+}
 if (existing) {
   if (await mountsMatch(extraDirs, existing, configVolume)) {
     log('Reusing running container');
   } else {
     log('Container config changed — recreating container...');
-    await teardown(workspace);
+    await teardownSession(existing);
     await startContainer(workspace, REPO_DIR, wsDir, projectName);
   }
 } else {
@@ -579,7 +664,7 @@ if (existing) {
 }
 
 // Find actual container name (devcontainer CLI chooses the name, not us)
-const containerName = await findContainer(workspace);
+const containerName = await findSessionContainer(projectName);
 if (!containerName) {
   err('Container not found after startup');
   process.exit(1);
