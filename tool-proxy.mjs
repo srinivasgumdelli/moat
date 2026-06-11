@@ -822,9 +822,13 @@ const server = http.createServer(async (req, res) => {
     const ghToken = getGitHubToken();
     const env = {};
     if (ghToken) { env.GITHUB_TOKEN = ghToken; env.GH_TOKEN = ghToken; }
+    // Translate container paths in args (e.g. `git -C /workspace`, worktree
+    // paths) to host paths, same as the terraform handler — git executes on
+    // the host, where /workspace does not exist.
+    const translatedArgs = translateArgPaths(body.args, wsHash);
     if (secretsPreScan('git', body.args, wsHash, res)) return;
     const startTime = Date.now();
-    const result = await executeCommand('git', body.args, { cwd: hostCwd, env });
+    const result = await executeCommand('git', translatedArgs, { cwd: hostCwd, env });
     const duration_ms = Date.now() - startTime;
     process.stderr.write(`[tool-proxy] git ${body.args.join(' ')} in ${hostCwd} -> exit ${result.exitCode}\n`);
     auditEmit(wsHash, 'tool.execute', { endpoint: 'git', args_summary: body.args.join(' '), exit_code: result.exitCode, duration_ms });
