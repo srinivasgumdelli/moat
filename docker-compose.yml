@@ -6,11 +6,8 @@ services:
       extnet:
     volumes:
       - ./squid.conf:/etc/squid/squid.conf:ro
-    deploy:
-      resources:
-        limits:
-          cpus: '0.5'
-          memory: 256M
+    cpus: 0.5
+    mem_limit: 256m
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "squid -k check || exit 1"]
@@ -51,12 +48,8 @@ services:
       - CLAUDE_CONFIG_DIR=/home/node/.claude
       - DEVCONTAINER=true
       - MOAT_SANDBOX=1
-    deploy:
-      resources:
-        limits:
-          # per session container — concurrent sessions each get their own slice
-          cpus: '1.5'
-          memory: 6G
+    cpus: 1.5
+    mem_limit: 6g
     command: sleep infinity
 
 networks:
