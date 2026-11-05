@@ -82,6 +82,12 @@ domains:
 #     MY_FEATURE_FLAG: "1"
 # claude_settings_file: ~/.config/my-project/claude-settings.json
 
+# Resume note - printed back into Claude Code's context after compaction or
+# /clear by a SessionStart hook moat manages. Relative to the workspace,
+# absolute, or ~/. Notes inside the workspace are read live; capped at 8 KB.
+# Pairs well with claude_settings.autoCompactWindow.
+# claude_resume_note: notes/resume.md
+
 # Extra CLI tools - installed in the devcontainer at start as the node user
 # (through the squid proxy; PyPI and npm are already allowed). An unchanged
 # list is not reinstalled on later starts of the same container.

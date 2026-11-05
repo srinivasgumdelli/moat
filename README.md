@@ -409,6 +409,25 @@ claude_settings_file: ~/.config/my-project/claude-settings.json
 - Host `~/.claude/settings.local.json` is still copied in and takes precedence over `settings.json` inside Claude Code.
 - `moat sync-skills` re-applies the overlay after re-merging host settings.
 
+### Resume note after compaction or /clear
+
+Long-running sessions lose their working context when Claude Code compacts the conversation or you run `/clear`. Point `.moat.yml` at a note and Moat makes Claude Code read it back automatically, with no prompt needed:
+
+```yaml
+# Auto-compact at 400K tokens, then the note restores working context.
+claude_settings:
+  autoCompactWindow: 400000
+claude_resume_note: notes/resume.md
+```
+
+Keep the note short and current: what you are working on, the branch, open decisions, the next step. Agents can update it themselves as they go.
+
+- Moat adds a `SessionStart` hook with matcher `clear|compact` to the container's `~/.claude/settings.json`. The hook prints the note to stdout, which Claude Code injects as context in the fresh session. It does not run on a normal startup or resume.
+- The path is relative to the workspace, absolute, or `~/...`. A missing file stops `moat` before the container starts.
+- Notes inside the workspace (or a directory added with `--add-dir`) are read when the hook fires, so edits take effect without a restart. Notes elsewhere are copied into the container at start.
+- Output is capped at 8 KB; longer notes are cut with a `[resume note truncated at 8192 bytes]` marker.
+- Re-running `moat` does not duplicate the hook, and removing the option removes it. Other `SessionStart` hooks are left alone. This hook is managed by Moat, so `hooks` in `claude_settings` still has no effect. `moat sync-skills` re-applies it.
+
 ### Extra CLI tools
 
 List extra tools in `.moat.yml` and Moat installs them into the devcontainer at start, as the `node` user, on `PATH`:

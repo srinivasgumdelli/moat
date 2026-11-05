@@ -257,6 +257,8 @@ if (subcommand === 'sync-skills') {
   try {
     const { loadSettingsOverlay, applySettingsOverlay } = await import('./lib/settings-overlay.mjs');
     await applySettingsOverlay(containerName, loadSettingsOverlay(containerWorkspace));
+    const { loadResumeNote, applyResumeNote } = await import('./lib/resume-note.mjs');
+    await applyResumeNote(containerName, loadResumeNote(containerWorkspace));
   } catch (e) {
     err(`Invalid .moat.yml: ${e.message}`);
   }
@@ -513,11 +515,14 @@ if (meta.has_docker) {
 // container work, so bad input fails fast with a clear message.
 const { loadSettingsOverlay, applySettingsOverlay } = await import('./lib/settings-overlay.mjs');
 const { loadExtraTools, installExtraTools } = await import('./lib/extra-tools.mjs');
+const { loadResumeNote, applyResumeNote } = await import('./lib/resume-note.mjs');
 let settingsOverlay;
 let extraTools;
+let resumeNote;
 try {
   settingsOverlay = loadSettingsOverlay(workspace);
   extraTools = loadExtraTools(workspace);
+  resumeNote = loadResumeNote(workspace, extraDirs);
 } catch (e) {
   err(`Invalid .moat.yml: ${e.message}`);
   process.exit(1);
@@ -735,6 +740,9 @@ if (runtime.configDir === '.claude') {
   await applySettingsOverlay(containerName, settingsOverlay);
   // Force permissions.defaultMode in settings.json so it takes effect even if the CLI flag is ignored
   await writeContainerSettings(containerName, { permissions: { defaultMode: 'bypassPermissions' } });
+  // Add (or remove) moat's SessionStart hook that restores the resume note
+  // after compaction or /clear.
+  await applyResumeNote(containerName, resumeNote);
 }
 
 // Install extra CLI tools listed in .moat.yml (skipped when already installed)
