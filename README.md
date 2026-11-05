@@ -386,6 +386,50 @@ The devcontainer waits for services with healthchecks to be healthy before start
 
 Domains listed under `domains:` are added to the squid proxy whitelist for that project. Use a leading dot to match the domain and all subdomains.
 
+### Claude Code settings overlay
+
+Settings you hand-edit in `~/.claude/settings.json` inside a running container are lost when the container is rebuilt. Put them in `.moat.yml` instead and Moat deep-merges them into the container's settings on every start:
+
+```yaml
+claude_settings:
+  autoCompactWindow: 400000
+  bashOutputMaxChars: 60000
+  env:
+    MY_FEATURE_FLAG: "1"
+
+# Optional: load settings from a JSON file (relative to the workspace, absolute, or ~/...).
+# Handy for sharing one file across projects. Inline claude_settings wins over the file.
+claude_settings_file: ~/.config/my-project/claude-settings.json
+```
+
+- Merge order: container defaults, then host `~/.claude/settings.json`, then `claude_settings_file`, then `claude_settings`. Objects merge recursively; arrays and scalars replace.
+- Moat-managed keys always win and are ignored (with a notice) if set in the overlay: `hooks`, `mcpServers`, `$schema`, and `permissions.defaultMode`.
+- `env` values are coerced to strings.
+- Invalid JSON, a missing file, or a non-mapping value stops `moat` before the container starts with a message naming the problem.
+- Host `~/.claude/settings.local.json` is still copied in and takes precedence over `settings.json` inside Claude Code.
+- `moat sync-skills` re-applies the overlay after re-merging host settings.
+
+### Extra CLI tools
+
+List extra tools in `.moat.yml` and Moat installs them into the devcontainer at start, as the `node` user, on `PATH`:
+
+```yaml
+extra_tools:
+  uv:
+    - ruff
+    - "my-tool[extras]==1.2.0"
+  npm:
+    - prettier
+```
+
+`uv` entries run `uv tool install <spec>` (binaries land in `~/.local/bin`); `npm` entries run `npm install -g <spec>`. Quote specs that contain brackets or version pins.
+
+- Installs run inside the container, so they go through the squid proxy. PyPI (`.pypi.org`, `.pythonhosted.org`) and npm (`.npmjs.org`) are already in the base allowlist; no extra domains are needed for normal packages. If a package pulls from somewhere else (a private index, a git host), add that host to `domains:`.
+- `uv` is included in the image; older images bootstrap it from PyPI on first use.
+- Moat records the installed list in the container. An unchanged list is not reinstalled on later starts of the same container; a rebuilt container or a changed list triggers a fresh install.
+- Each entry must be a single package spec (no flags or spaces). Install failures are reported but do not stop the session.
+- Tools are installed in the main devcontainer, not in background agent containers.
+
 ## Adding domains to the whitelist
 
 For global domain changes, edit `squid.conf` and add:

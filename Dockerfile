@@ -110,7 +110,7 @@ RUN ARCH=$(dpkg --print-architecture) && \
 # Python 3 + linters
 RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-pip python3-venv && \
-    pip3 install --break-system-packages ruff pyright && \
+    pip3 install --break-system-packages ruff pyright uv && \
     apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Go runtime + tools (copy from official image to avoid proxy issues during build)
