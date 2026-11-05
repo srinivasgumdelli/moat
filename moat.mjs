@@ -253,6 +253,13 @@ if (subcommand === 'sync-skills') {
   await copyPlugins(containerName, containerWorkspace);
   await copyStatusline(containerName);
   await copySettings(containerName);
+  // Re-apply the project's settings overlay so the host merge doesn't clobber it
+  try {
+    const { loadSettingsOverlay, applySettingsOverlay } = await import('./lib/settings-overlay.mjs');
+    await applySettingsOverlay(containerName, loadSettingsOverlay(containerWorkspace));
+  } catch (e) {
+    err(`Invalid .moat.yml: ${e.message}`);
+  }
   process.exit(0);
 }
 
@@ -502,6 +509,20 @@ if (meta.has_docker) {
   log('Docker access enabled via Podman (rootless)');
 }
 
+// Validate the Claude settings overlay and extra tools early, before any
+// container work, so bad input fails fast with a clear message.
+const { loadSettingsOverlay, applySettingsOverlay } = await import('./lib/settings-overlay.mjs');
+const { loadExtraTools, installExtraTools } = await import('./lib/extra-tools.mjs');
+let settingsOverlay;
+let extraTools;
+try {
+  settingsOverlay = loadSettingsOverlay(workspace);
+  extraTools = loadExtraTools(workspace);
+} catch (e) {
+  err(`Invalid .moat.yml: ${e.message}`);
+  process.exit(1);
+}
+
 // Resolve Go version: .moat.yml languages.go > go.mod detection > default
 {
   const { detectGoVersion } = await import('./lib/detect.mjs');
@@ -709,9 +730,15 @@ if (runtime.configDir === '.claude') {
   await copyMcpServers(containerName, hostMcpServers, { proxyToken, proxiedServers: proxiedServerNames });
   // Copy host settings.local.json (carries user-level hooks and other local overrides)
   await copySettingsLocal(containerName);
+  // Apply the .moat.yml settings overlay on top of host settings, before
+  // moat re-forces its own managed keys below.
+  await applySettingsOverlay(containerName, settingsOverlay);
   // Force permissions.defaultMode in settings.json so it takes effect even if the CLI flag is ignored
   await writeContainerSettings(containerName, { permissions: { defaultMode: 'bypassPermissions' } });
 }
+
+// Install extra CLI tools listed in .moat.yml (skipped when already installed)
+await installExtraTools(containerName, extraTools);
 
 // Execute runtime or headless dispatch
 let exitCode;

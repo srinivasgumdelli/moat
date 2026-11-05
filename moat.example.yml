@@ -70,3 +70,24 @@ domains:
   - .crates.io
   - .docker.io
   - .rubygems.org
+
+# Claude Code settings overlay - deep-merged into the container's
+# ~/.claude/settings.json on every start (survives container rebuilds).
+# Moat-managed keys are ignored here: hooks, mcpServers, $schema,
+# permissions.defaultMode. Inline claude_settings wins over the file.
+# claude_settings:
+#   autoCompactWindow: 400000
+#   bashOutputMaxChars: 60000
+#   env:
+#     MY_FEATURE_FLAG: "1"
+# claude_settings_file: ~/.config/my-project/claude-settings.json
+
+# Extra CLI tools - installed in the devcontainer at start as the node user
+# (through the squid proxy; PyPI and npm are already allowed). An unchanged
+# list is not reinstalled on later starts of the same container.
+# extra_tools:
+#   uv:
+#     - ruff
+#     - "my-tool[extras]==1.2.0"
+#   npm:
+#     - prettier
