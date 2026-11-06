@@ -439,11 +439,13 @@ extra_tools:
     - "my-tool[extras]==1.2.0"
   npm:
     - prettier
+  go:
+    - github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
 ```
 
-`uv` entries run `uv tool install <spec>` (binaries land in `~/.local/bin`); `npm` entries run `npm install -g <spec>`. Quote specs that contain brackets or version pins.
+`uv` entries run `uv tool install <spec>` (binaries land in `~/.local/bin`); `npm` entries run `npm install -g <spec>`; `go` entries run `go install <spec>` (binaries land in `~/go/bin`) and must include a version (`module/path@version`), which keeps the container on the same tool version as CI. Quote specs that contain brackets or version pins.
 
-- Installs run inside the container, so they go through the squid proxy. PyPI (`.pypi.org`, `.pythonhosted.org`) and npm (`.npmjs.org`) are already in the base allowlist; no extra domains are needed for normal packages. If a package pulls from somewhere else (a private index, a git host), add that host to `domains:`.
+- Installs run inside the container, so they go through the squid proxy. PyPI (`.pypi.org`, `.pythonhosted.org`), npm (`.npmjs.org`) and the Go module proxy (`proxy.golang.org`, `sum.golang.org`) are already in the base allowlist; no extra domains are needed for normal packages. If a package pulls from somewhere else (a private index, a git host), add that host to `domains:`.
 - `uv` is included in the image; older images bootstrap it from PyPI on first use.
 - Moat records the installed list in the container. An unchanged list is not reinstalled on later starts of the same container; a rebuilt container or a changed list triggers a fresh install.
 - Each entry must be a single package spec (no flags or spaces). Install failures are reported but do not stop the session.
