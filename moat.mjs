@@ -660,8 +660,10 @@ if (!proxyOk) {
 }
 
 // Pre-create shared volumes (external: true requires they exist before compose up)
-// Config volume is per-workspace so --continue/--resume scopes to the correct session
-for (const vol of ['moat-bashhistory', configVolume]) {
+// Config volume is per-workspace so --continue/--resume scopes to the correct session.
+// The Go build cache is shared by all sessions: entries are content-addressed and
+// Go's cache is safe for concurrent use, so parallel sandboxes reuse each other's builds.
+for (const vol of ['moat-bashhistory', 'moat-gocache', configVolume]) {
   try { execSync(`docker volume inspect ${vol}`, { stdio: 'pipe' }); }
   catch { execSync(`docker volume create ${vol}`, { stdio: 'pipe' }); }
 }

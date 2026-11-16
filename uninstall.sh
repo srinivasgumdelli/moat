@@ -102,7 +102,7 @@ section "Docker volumes"
 
 existing_volumes=()
 # Check legacy shared volumes and bash history
-for vol in moat_moat-bashhistory moat_moat-config moat-bashhistory moat-config; do
+for vol in moat_moat-bashhistory moat_moat-config moat-bashhistory moat-config moat-gocache; do
   if docker volume inspect "$vol" &>/dev/null 2>&1; then
     existing_volumes+=("$vol")
   fi

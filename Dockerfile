@@ -141,7 +141,8 @@ RUN if [ "$RUNTIME" = "claude" ]; then \
 # Install TypeScript/Go language tools and MCP dependencies
 RUN npm install -g typescript typescript-language-server @modelcontextprotocol/sdk vscode-languageserver-protocol vscode-jsonrpc && \
     GOPATH=/home/node/go go install golang.org/x/tools/gopls@latest && \
-    GOPATH=/home/node/go go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest
+    GOPATH=/home/node/go go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest && \
+    mkdir -p /home/node/.cache/go-build
 
 # Configure rootless Podman (overlay via fuse, cgroupfs manager)
 # Note: slirp4netns is used automatically for rootless networking;
