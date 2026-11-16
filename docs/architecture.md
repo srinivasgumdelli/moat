@@ -44,7 +44,7 @@ Networks:
 - `sandbox`: `internal: true` (no external access)
 - `extnet`: default bridge (external access)
 
-Volumes: `moat-bashhistory`, `moat-config` (compose manages naming)
+Volumes: `moat-bashhistory`, `moat-config`, `moat-gocache` (shared Go build cache, mounted at `/home/node/.cache/go-build`) (compose manages naming)
 
 ## Step 2: Create `squid.conf`
 

@@ -422,7 +422,7 @@ Containers persist across sessions for fast re-launch:
 - On exit, the process exit handler kills the tool proxy and terminates Mutagen sync sessions, but **leaves the container running**
 - On next launch, the container is reused if the workspace and `--add-dir` mounts match
 - If the workspace or extra directories changed, the container is automatically recreated
-- **Persistent volumes** (`moat-bashhistory`, `moat-config`) survive even full teardowns — bash history and Claude config carry over
+- **Persistent volumes** (`moat-bashhistory`, `moat-config`, `moat-gocache`) survive even full teardowns — bash history, Claude config and the shared Go build cache carry over
 - Use `moat down` to explicitly tear down containers
 
 ## Resource Limits

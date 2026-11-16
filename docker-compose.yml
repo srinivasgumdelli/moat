@@ -34,6 +34,7 @@ services:
       - ${MOAT_WORKSPACE:-~/Repos}:/workspace:cached
       - moat-bashhistory:/commandhistory
       - moat-config:/home/node/.claude
+      - moat-gocache:/home/node/.cache/go-build
     depends_on:
       squid:
         condition: service_healthy
@@ -63,4 +64,7 @@ volumes:
     external: true
   moat-config:
     name: moat-config
+    external: true
+  moat-gocache:
+    name: moat-gocache
     external: true
